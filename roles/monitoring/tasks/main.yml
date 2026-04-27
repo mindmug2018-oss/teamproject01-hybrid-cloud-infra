@@ -1,0 +1,237 @@
+# ~/project/roles/monitoring/tasks/main.yml
+---
+# ── Prometheus ────────────────────────────────────────────
+- name: prometheus 전용 유저 생성
+  user:
+    name: prometheus
+    shell: /sbin/nologin
+    create_home: no
+  become: yes
+
+- name: prometheus 디렉토리 생성
+  file:
+    path: "{{ item }}"
+    state: directory
+    owner: prometheus
+    group: prometheus
+  loop:
+    - /etc/prometheus
+    - /var/lib/prometheus
+  become: yes
+
+- name: prometheus 바이너리 다운로드
+  get_url:
+    url: https://github.com/prometheus/prometheus/releases/download/v2.51.0/prometheus-2.51.0.linux-amd64.tar.gz
+    dest: /tmp/prometheus.tar.gz
+  become: yes
+
+- name: prometheus 압축 해제
+  unarchive:
+    src: /tmp/prometheus.tar.gz
+    dest: /tmp/
+    remote_src: yes
+  become: yes
+
+- name: prometheus 바이너리 설치
+  copy:
+    src: "/tmp/prometheus-2.51.0.linux-amd64/{{ item }}"
+    dest: "/usr/local/bin/{{ item }}"
+    mode: '0755'
+    remote_src: yes
+  loop:
+    - prometheus
+    - promtool
+  become: yes
+
+- name: prometheus console 파일 복사
+  copy:
+    src: "/tmp/prometheus-2.51.0.linux-amd64/{{ item }}"
+    dest: "/etc/prometheus/{{ item }}"
+    remote_src: yes
+    owner: prometheus
+  loop:
+    - consoles
+    - console_libraries
+  become: yes
+
+- name: prometheus 설정 파일 배포
+  copy:
+    src: prometheus.yml
+    dest: /etc/prometheus/prometheus.yml
+    owner: prometheus
+    mode: '0644'
+  become: yes
+  notify: restart prometheus
+
+- name: alert rules 파일 배포
+  copy:
+    src: alert.rules.yml
+    dest: /etc/prometheus/alert.rules.yml
+    owner: prometheus
+    mode: '0644'
+  become: yes
+  notify: restart prometheus
+
+- name: prometheus systemd 서비스 등록
+  copy:
+    dest: /etc/systemd/system/prometheus.service
+    content: |
+      [Unit]
+      Description=Prometheus
+      After=network.target
+
+      [Service]
+      User=prometheus
+      ExecStart=/usr/local/bin/prometheus \
+        --config.file=/etc/prometheus/prometheus.yml \
+        --storage.tsdb.path=/var/lib/prometheus \
+        --storage.tsdb.retention.time=15d \
+        --web.enable-lifecycle
+      Restart=always
+
+      [Install]
+      WantedBy=multi-user.target
+    mode: '0644'
+  become: yes
+
+- name: prometheus 서비스 시작
+  systemd:
+    name: prometheus
+    state: started
+    enabled: yes
+    daemon_reload: yes
+  become: yes
+
+# ── AlertManager ──────────────────────────────────────────
+- name: alertmanager 전용 유저 생성
+  user:
+    name: alertmanager
+    shell: /sbin/nologin
+    create_home: no
+  become: yes
+
+- name: alertmanager 디렉토리 생성
+  file:
+    path: "{{ item }}"
+    state: directory
+    owner: alertmanager
+    group: alertmanager
+  loop:
+    - /etc/alertmanager
+    - /var/lib/alertmanager
+  become: yes
+
+- name: alertmanager 바이너리 다운로드
+  get_url:
+    url: https://github.com/prometheus/alertmanager/releases/download/v0.27.0/alertmanager-0.27.0.linux-amd64.tar.gz
+    dest: /tmp/alertmanager.tar.gz
+  become: yes
+
+- name: alertmanager 압축 해제
+  unarchive:
+    src: /tmp/alertmanager.tar.gz
+    dest: /tmp/
+    remote_src: yes
+  become: yes
+
+- name: alertmanager 바이너리 설치
+  copy:
+    src: "/tmp/alertmanager-0.27.0.linux-amd64/{{ item }}"
+    dest: "/usr/local/bin/{{ item }}"
+    mode: '0755'
+    remote_src: yes
+  loop:
+    - alertmanager
+    - amtool
+  become: yes
+
+- name: alertmanager 설정 파일 배포
+  copy:
+    src: alertmanager.yml
+    dest: /etc/alertmanager/alertmanager.yml
+    owner: alertmanager
+    mode: '0644'
+  become: yes
+  notify: restart alertmanager
+
+- name: alertmanager systemd 서비스 등록
+  copy:
+    dest: /etc/systemd/system/alertmanager.service
+    content: |
+      [Unit]
+      Description=AlertManager
+      After=network.target
+
+      [Service]
+      User=alertmanager
+      ExecStart=/usr/local/bin/alertmanager \
+        --config.file=/etc/alertmanager/alertmanager.yml \
+        --storage.path=/var/lib/alertmanager
+      Restart=always
+
+      [Install]
+      WantedBy=multi-user.target
+    mode: '0644'
+  become: yes
+
+- name: alertmanager 서비스 시작
+  systemd:
+    name: alertmanager
+    state: started
+    enabled: yes
+    daemon_reload: yes
+  become: yes
+
+# ── Grafana ───────────────────────────────────────────────
+- name: grafana yum 저장소 추가
+  copy:
+    dest: /etc/yum.repos.d/grafana.repo
+    content: |
+      [grafana]
+      name=grafana
+      baseurl=https://rpm.grafana.com
+      repo_gpgcheck=1
+      enabled=1
+      gpgcheck=1
+      gpgkey=https://rpm.grafana.com/gpg.key
+      sslverify=1
+      sslcacert=/etc/pki/tls/certs/ca-bundle.crt
+  become: yes
+
+- name: grafana 설치
+  dnf:
+    name: grafana
+    state: present
+  become: yes
+
+- name: grafana 서비스 시작
+  systemd:
+    name: grafana-server
+    state: started
+    enabled: yes
+  become: yes
+
+# ── 방화벽 설정 ──────────────────────────────────────────
+- name: firewalld 서비스 시작 및 활성화
+  systemd:
+    name: firewalld
+    state: started
+    enabled: yes
+  become: yes
+  ignore_errors: yes  # firewalld 패키지 자체가 없는 경우를 대비
+
+# ── 방화벽 포트 오픈 ──────────────────────────────────────
+- name: 모니터링 포트 오픈
+  firewalld:
+    port: "{{ item }}/tcp"
+    permanent: yes
+    state: enabled
+    immediate: yes
+  loop:
+    - "9090"   # Prometheus
+    - "9093"   # AlertManager
+    - "3000"   # Grafana
+    - "9080"   # Recovery Server
+    - "9100"   # Node Exporter
+  become: yes
+  ignore_errors: yes   # SELinux disabled 환경에서 firewalld 없을 수 있음

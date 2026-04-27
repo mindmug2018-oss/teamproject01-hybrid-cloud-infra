@@ -1,0 +1,69 @@
+# ~/project/roles/postgresql/tasks/main.yml
+---
+- name: apt 패키지 업데이트
+  apt:
+    update_cache: yes
+  become: yes
+
+- name: PostgreSQL 설치
+  apt:
+    name:
+      - postgresql
+      - postgresql-contrib
+      - python3-psycopg2    # ansible DB 모듈용
+    state: present
+  become: yes
+
+- name: PostgreSQL 서비스 시작
+  systemd:
+    name: postgresql
+    state: started
+    enabled: yes
+  become: yes
+
+- name: appuser 생성
+  postgresql_user:
+    name: appuser
+    password: "apppass123"
+    state: present
+  become: yes
+  become_user: postgres
+
+- name: appdb 데이터베이스 생성
+  postgresql_db:
+    name: appdb
+    owner: appuser
+    state: present
+  become: yes
+  become_user: postgres
+
+- name: 원격 접속 허용 (listen_addresses)
+  lineinfile:
+    path: /etc/postgresql/16/main/postgresql.conf
+    regexp: "^#?listen_addresses"
+    line: "listen_addresses = '*'"
+    backup: yes
+  become: yes
+  notify: restart postgresql
+
+- name: pg_hba.conf 원격 접속 규칙 추가
+  lineinfile:
+    path: /etc/postgresql/16/main/pg_hba.conf
+    line: "host  appdb  appuser  172.16.1.0/24  md5"
+    state: present
+  become: yes
+  notify: restart postgresql
+
+- name: items 테이블 생성
+  postgresql_query:
+    db: appdb
+    login_user: postgres
+    query: |
+      CREATE TABLE IF NOT EXISTS items (
+        id SERIAL PRIMARY KEY,
+        name VARCHAR(100) NOT NULL,
+        server VARCHAR(20),
+        created_at TIMESTAMP DEFAULT NOW()
+      );
+  become: yes
+  become_user: postgres

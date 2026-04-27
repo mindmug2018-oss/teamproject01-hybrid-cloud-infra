@@ -1,0 +1,7 @@
+# ~/project/playbooks/web.yml — rocky1/rocky2 전용
+---
+- name: 웹 서버 설정
+  hosts: rocky
+  roles:
+    - fastapi
+    - nginx

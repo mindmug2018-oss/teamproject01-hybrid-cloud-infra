@@ -1,0 +1,51 @@
+# ~/project/monitoring/prometheus.yml
+
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets: ['alertmanager:9093'] # Docker 버전
+      # - targets: ['localhost:9093']    # # No-Docker 버전(같은 호스트에서 실행)
+
+rule_files:
+  - "alert.rules.yml"
+
+scrape_configs:
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['localhost:9090']
+
+  - job_name: 'node-mgmt'
+    static_configs:
+      - targets: ['172.16.1.150:9100']
+        labels: {instance: 'proj-mgmt'}
+
+  - job_name: 'node-rocky1'
+    static_configs:
+      - targets: ['172.16.1.151:9100']
+        labels: {instance: 'proj-rocky1'}
+
+  - job_name: 'node-rocky2'
+    static_configs:
+      - targets: ['172.16.1.152:9100']
+        labels: {instance: 'proj-rocky2'}
+
+  - job_name: 'node-ubuntu1'
+    static_configs:
+      - targets: ['172.16.1.153:9100']
+        labels: {instance: 'proj-ubuntu1'}
+
+  - job_name: 'fastapi-rocky1'
+    static_configs:
+      - targets: ['172.16.1.151:8000']
+        labels: {instance: 'proj-rocky1'}
+    metrics_path: '/metrics'
+
+  - job_name: 'fastapi-rocky2'
+    static_configs:
+      - targets: ['172.16.1.152:8000']
+        labels: {instance: 'proj-rocky2'}
+    metrics_path: '/metrics'

@@ -1,0 +1,24 @@
+# ~/project/playbooks/monitoring.yml
+# No-Docker 버전
+---
+- name: 모든 서버에 Node Exporter 설치
+  hosts: all
+  roles:
+    - node_exporter
+
+- name: mgmt 서버에 모니터링 바이너리 설치
+  hosts: mgmt
+  roles:
+    - monitoring          # 바이너리 설치 role
+
+# Docker 버전
+# ---
+# - name: 모든 서버에 Node Exporter 설치
+#   hosts: all
+#   roles:
+#     - node_exporter
+
+# - name: mgmt 서버에 Docker + 모니터링 스택 설치
+#   hosts: mgmt
+#   roles:
+#     - monitoring          # Docker 설치 포함된 role

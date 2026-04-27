@@ -1,0 +1,6 @@
+# ~/project/playbooks/site.yml — 전체 한 번에 실행
+---
+- import_playbook: mgmt.yml
+- import_playbook: db.yml
+- import_playbook: web.yml
+- import_playbook: monitoring.yml

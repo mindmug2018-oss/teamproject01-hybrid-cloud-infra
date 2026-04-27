@@ -1,0 +1,79 @@
+# ansible.cfg가 제대로 적용됐는지 확인하려면? (명령어를 실행하기 전, 아래 명령어를 입력)
+cd ~/project
+ansible-config dump | grep DEFAULT_HOST_LIST
+
+다음 결과가 출력된다면 설정이 완벽하게 적용된 것
+> (DEFAULT_HOST_LIST(/home/user1/project/ansible.cfg) = ['/home/user1/project/inventory/hosts.ini'])
+
+# 실행 방법
+cd ~/project
+
+# 문법 검사만 (실제 실행 안 함)
+ansible-playbook playbooks/site.yml --syntax-check
+
+# 변경사항 미리보기 (실제 적용 안 함)
+ansible-playbook playbooks/site.yml --check
+
+# 전체 한 번에
+ansible-playbook playbooks/site.yml
+
+# DB만
+ansible-playbook playbooks/db.yml
+
+# 웹만
+ansible-playbook playbooks/web.yml
+
+# Node Exporter 먼저 배포
+cd ~/project
+ansible-playbook playbooks/monitoring.yml
+
+# 모니터링 스택 실행
+cd ~/project/monitoring
+docker compose up -d
+
+# 상태 확인
+docker compose ps
+
+# 수집 대상 확인 (모두 UP이어야 함)
+curl -s http://localhost:9090/api/v1/targets | python3 -m json.tool | grep -E '"health"|"job"'
+
+# No-Docker로 실행
+ansible-playbook -i inventory/hosts.ini playbooks/monitoring.yml
+
+# Docker로 실행 (나중에 docker 공부할 때)
+ansible-playbook -i inventory/hosts.ini playbooks/monitoring-docker.yml
+
+# 최종 디렉토리 구조 (GitHub에 올라간 상태)
+project/
+├── ansible.cfg
+├── memo.txt
+├── README.md
+├── .gitignore
+│
+├── files/
+│   └── app/main.py
+│
+├── inventory/
+│   └── hosts.ini
+│
+├── monitoring/
+│   ├── grafana/dashboards
+│   ├── alert.rules.yml
+│   ├── alertmanager.yml
+│   ├── docker-compose.yml
+│   └── prometheus.yml
+│
+├── playbooks/
+│   ├── db.yml
+│   ├── monitoring.yml
+│   ├── site.yml
+│   └── web.yml
+│
+└── roles/
+    ├── fastapi/handlers/main.yml 
+    ├── fastapi/tasks/main.yml 
+    ├── monitoring/tasks/ 메인 파일 없음
+    ├── nginx/handlers/main.yml
+    ├── nginx/tasks/main.yml
+    ├── postgresql/handlers/main.yml
+    └── postgresql/tasks/main.yml

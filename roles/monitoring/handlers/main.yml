@@ -1,0 +1,13 @@
+# ~/project/roles/monitoring/handlers/main.yml
+---
+- name: restart prometheus
+  systemd:
+    name: prometheus
+    state: restarted
+  become: yes
+
+- name: restart alertmanager
+  systemd:
+    name: alertmanager
+    state: restarted
+  become: yes

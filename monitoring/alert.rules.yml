@@ -1,0 +1,42 @@
+# ~/project/monitoring/alert.rules.yml
+
+groups:
+  - name: project_alerts
+    rules:
+
+      - alert: FastAPIDown
+        expr: up{job=~"fastapi-.*"} == 0
+        for: 30s
+        labels:
+          severity: critical
+        annotations:
+          summary: "FastAPI 다운: {{ $labels.instance }}"
+          description: "{{ $labels.instance }} FastAPI가 30초 이상 응답 없음"
+
+      - alert: NodeDown
+        expr: up{job=~"node-.*"} == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "서버 다운: {{ $labels.instance }}"
+
+      - alert: HighCPU
+        expr: >
+          100 - (avg by(instance)
+          (rate(node_cpu_seconds_total{mode="idle"}[5m])) * 100) > 80
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "CPU 과부하: {{ $labels.instance }} ({{ $value | printf \"%.1f\" }}%)"
+
+      - alert: HighMemory
+        expr: >
+          (1 - node_memory_MemAvailable_bytes /
+          node_memory_MemTotal_bytes) * 100 > 85
+        for: 3m
+        labels:
+          severity: warning
+        annotations:
+          summary: "메모리 부족: {{ $labels.instance }}"

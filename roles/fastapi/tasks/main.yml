@@ -1,0 +1,72 @@
+# ~/project/roles/fastapi/tasks/main.yml
+---
+- name: Python pip 및 컴파일 의존성 패키지 설치
+  dnf:
+    name: 
+      - python3-pip
+      - gcc
+      - gcc-c++         # <--- C++ 컴파일러 추가 (greenlet 빌드에 필요)
+      - python3-devel
+      - postgresql-devel
+    state: present
+  become: yes
+
+- name: FastAPI 관련 패키지 설치 (Python 3.6 호환 버전 명시)
+  pip:
+    name:
+      - "fastapi==0.83.0"
+      - "uvicorn==0.16.0"
+      - "sqlalchemy==1.4.41"
+      - "psycopg2-binary==2.9.3"
+      - "prometheus-fastapi-instrumentator==5.7.1"
+      - "greenlet==1.1.2"    # <--- 에러 방지를 위해 낮은 버전 고정
+      - "typing-extensions<4.0.0" # Python 3.6용
+    state: present
+    executable: pip3
+  become: yes
+
+- name: 앱 디렉토리 생성
+  file:
+    path: /opt/app
+    state: directory
+    owner: user1
+    mode: '0755'
+  become: yes
+
+- name: FastAPI 앱 코드 복사
+  copy:
+    src: app/main.py
+    dest: /opt/app/main.py
+    owner: user1
+    mode: '0644'
+  become: yes
+
+- name: FastAPI systemd 서비스 등록
+  copy:
+    dest: /etc/systemd/system/fastapi.service
+    content: |
+      [Unit]
+      Description=FastAPI Application
+      After=network.target
+
+      [Service]
+      Type=simple
+      User=user1
+      WorkingDirectory=/opt/app
+      ExecStart=/usr/local/bin/uvicorn main:app --host 0.0.0.0 --port 8000 --workers 2
+      Restart=always
+      RestartSec=5
+
+      [Install]
+      WantedBy=multi-user.target
+    mode: '0644'
+  become: yes
+  notify: restart fastapi
+
+- name: FastAPI 서비스 시작
+  systemd:
+    name: fastapi
+    state: started
+    enabled: yes
+    daemon_reload: yes
+  become: yes

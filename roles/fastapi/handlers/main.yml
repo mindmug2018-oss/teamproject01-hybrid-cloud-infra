@@ -1,0 +1,8 @@
+# ~/project/roles/fastapi/handlers/main.yml
+---
+- name: restart fastapi
+  systemd:
+    name: fastapi
+    state: restarted
+    daemon_reload: yes
+  become: yes

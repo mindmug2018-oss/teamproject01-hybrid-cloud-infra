@@ -1,0 +1,7 @@
+# ~/project/roles/haproxy/handlers/main.yml
+---
+- name: restart haproxy
+  systemd:
+    name: haproxy
+    state: restarted
+  become: yes

@@ -1,0 +1,6 @@
+# ~/project/playbooks/mgmt.yml
+---
+- name: mgmt 서버 설정 (HAProxy)
+  hosts: 172.16.1.150
+  roles:
+    - haproxy

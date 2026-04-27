@@ -1,0 +1,50 @@
+# ~/project/roles/haproxy/tasks/main.yml
+---
+- name: HAProxy 설치
+  dnf:
+    name: haproxy
+    state: present
+  become: yes
+
+- name: HAProxy 설정 파일 배포
+  copy:
+    dest: /etc/haproxy/haproxy.cfg
+    content: |
+      global
+          log         127.0.0.1 local2
+          daemon
+
+      defaults
+          log     global
+          mode    http
+          option  httplog
+          timeout connect  5s
+          timeout client   30s
+          timeout server   30s
+
+      frontend web_front
+          bind *:80
+          default_backend app_servers
+
+      backend app_servers
+          balance roundrobin
+          option  httpchk GET /health
+          server  rocky1 172.16.1.151:80 check inter 5s fall 3 rise 2
+          server  rocky2 172.16.1.152:80 check inter 5s fall 3 rise 2
+
+      frontend stats
+          bind *:8404
+          stats enable
+          stats uri /stats
+          stats refresh 5s
+          stats auth admin:admin123
+    mode: '0644'
+  become: yes
+  notify: restart haproxy
+
+- name: HAProxy 서비스 시작
+  systemd:
+    name: haproxy
+    state: started
+    enabled: yes
+  become: yes

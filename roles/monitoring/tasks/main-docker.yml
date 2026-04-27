@@ -1,0 +1,66 @@
+# ~/project/roles/monitoring/tasks/main-docker.yml
+
+# Docker 버전 — monitoring role
+---
+- name: Docker 설치 (Rocky Linux)
+  dnf:
+    name:
+      - docker-ce
+      - docker-ce-cli
+      - containerd.io
+      - docker-compose-plugin
+    state: present
+  become: yes
+
+- name: Docker 서비스 시작
+  systemd:
+    name: docker
+    state: started
+    enabled: yes
+  become: yes
+
+- name: user1을 docker 그룹에 추가
+  user:
+    name: user1
+    groups: docker
+    append: yes
+  become: yes
+
+- name: 모니터링 설정 디렉토리 생성
+  file:
+    path: /opt/monitoring
+    state: directory
+    owner: user1
+    mode: '0755'
+  become: yes
+
+- name: prometheus.yml 배포
+  copy:
+    src: prometheus.yml
+    dest: /opt/monitoring/prometheus.yml
+  become: yes
+
+- name: alert.rules.yml 배포
+  copy:
+    src: alert.rules.yml
+    dest: /opt/monitoring/alert.rules.yml
+  become: yes
+
+- name: alertmanager.yml 배포
+  copy:
+    src: alertmanager.yml
+    dest: /opt/monitoring/alertmanager.yml
+  become: yes
+
+- name: docker-compose.yml 배포
+  copy:
+    src: docker-compose.yml
+    dest: /opt/monitoring/docker-compose.yml
+  become: yes
+
+- name: Docker Compose로 모니터링 스택 실행
+  community.docker.docker_compose_v2:
+    project_src: /opt/monitoring
+    state: present
+  become: yes
+  become_user: user1

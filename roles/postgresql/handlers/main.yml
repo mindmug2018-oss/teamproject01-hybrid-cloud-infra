@@ -1,0 +1,7 @@
+# ~/project/roles/postgresql/handlers/main.yml
+---
+- name: restart postgresql
+  systemd:
+    name: postgresql
+    state: restarted
+  become: yes

@@ -1,0 +1,22 @@
+# SSH 키 및 민감 정보
+*.pem
+*.key
+.vault_pass
+id_ed25519*
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.env
+
+# Ansible 임시 파일
+*.retry
+.ansible/
+
+# OS 파일
+.DS_Store
+Thumbs.db
+
+# 로그
+*.log
