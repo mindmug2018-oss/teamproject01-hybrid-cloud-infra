@@ -11,6 +11,7 @@
 #   DOCKERHUB_USER     = your Docker Hub username
 #   DOCKERHUB_TOKEN    = your Docker Hub access token
 
+# .github/workflows/deploy.yml
 name: Build → Test → Deploy
 
 on:
@@ -19,7 +20,6 @@ on:
       - main
 
 env:
-  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: false
   IMAGE_NAME: ${{ secrets.DOCKERHUB_USER }}/fastapi-app
 
 jobs:
@@ -28,7 +28,7 @@ jobs:
     name: Code checks
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4.2.2
 
       - uses: actions/setup-python@v5
         with:
@@ -69,7 +69,7 @@ jobs:
     runs-on: ubuntu-latest
     needs: test
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4.2.2
 
       - name: Log in to Docker Hub
         uses: docker/login-action@v3
@@ -78,7 +78,7 @@ jobs:
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
       - name: Build and push FastAPI image
-        uses: docker/build-push-action@v5
+        uses: docker/build-push-action@v6
         with:
           context: roles/docker_fastapi/files/app
           push: true
@@ -89,28 +89,23 @@ jobs:
   # ── 3. Ansible Deploy ─────────────────────────────────────────────────
   deploy:
     name: Ansible deploy
-    runs-on: ubuntu-latest
+    # This targets the runner client agent installed locally on your on-premise server
+    runs-on: self-hosted
     needs: docker
     steps:
-      - uses: actions/checkout@v4
-
-      - name: SSH → mgmt → ansible-playbook
-        uses: appleboy/ssh-action@v1.0.3
-        with:
-          host: ${{ secrets.MGMT_IP }}
-          username: ${{ secrets.MGMT_USER }}
-          key: ${{ secrets.ANSIBLE_SSH_KEY }}
-          port: 22
-          timeout: 300s
-          script: |
-            set -e
-            echo "=== Deploy start: $(date) ==="
-            cd ~/project1-onpremise
-            git pull origin main
-            ansible-playbook playbooks/site.yml \
-              -i inventory/hosts.ini \
-              --diff
-            echo "=== Deploy complete: $(date) ==="
+      - name: Execute local pull and run playbook
+        run: |
+          set -e
+          echo "=== Deploy start: $(date) ==="
+          cd ~/project1-onpremise
+          
+          # Fetches using the local SSH identity configuration fixed in Phase 2
+          git pull origin main
+          
+          ansible-playbook playbooks/site.yml \
+            -i inventory/hosts.ini \
+            --diff
+          echo "=== Deploy complete: $(date) ==="
 
       # ── Slack notifications ───────────────────────────────────────────
       - name: Slack success
