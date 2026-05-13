@@ -2,14 +2,14 @@
 # CI/CD Pipeline: Test → Docker Build & Push → Ansible Deploy
 #
 # Required GitHub Secrets:
-#   MGMT_IP           = 192.168.61.133
-#   MGMT_USER         = user1
-#   ANSIBLE_SSH_KEY   = contents of ~/.ssh/teamproj01ansiblekey.pem
-#   SLACK_WEBHOOK     = https://hooks.slack.com/services/...
+#   MGMT_IP            = 192.168.61.133
+#   MGMT_USER          = user1
+#   ANSIBLE_SSH_KEY    = contents of ~/.ssh/teamproj01ansiblekey.pem
+#   SLACK_WEBHOOK      = https://hooks.slack.com/services/...
 #   TELEGRAM_BOT_TOKEN = 8263460077:AAHYulXi7OqeHygQLMg_8pp-cY3zeF2ahfc
-#   TELEGRAM_CHAT_ID  = 8646527871
-#   DOCKERHUB_USER    = your Docker Hub username
-#   DOCKERHUB_TOKEN   = your Docker Hub access token
+#   TELEGRAM_CHAT_ID   = 8646527871
+#   DOCKERHUB_USER     = your Docker Hub username
+#   DOCKERHUB_TOKEN    = your Docker Hub access token
 
 name: Build → Test → Deploy
 
@@ -19,6 +19,7 @@ on:
       - main
 
 env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
   IMAGE_NAME: ${{ secrets.DOCKERHUB_USER }}/fastapi-app
 
 jobs:
@@ -36,8 +37,11 @@ jobs:
       - name: Syntax check main.py
         run: |
           python -c "
-          # main.py is embedded in docker_fastapi role
-          print('✅ main.py syntax check skipped - embedded in Ansible role')
+          import ast
+          with open('roles/docker_fastapi/files/app/main.py') as f:
+              src = f.read()
+          ast.parse(src)
+          print('✅ main.py syntax OK')
           "
 
       - name: Syntax check all YAML files
@@ -109,41 +113,35 @@ jobs:
             echo "=== Deploy complete: $(date) ==="
 
       # ── Slack notifications ───────────────────────────────────────────
-      - name: Slack ✅ success
+      - name: Slack success
         if: success()
         run: |
           curl -s -X POST \
             -H 'Content-type: application/json' \
-            --data "{\"text\":\"✅ *Deploy OK* | branch: \`${{ github.ref_name }}\` | commit: \`${{ github.sha }}\`\"}" \
+            --data "{\"text\":\"✅ *Deploy OK* | branch: \`${{ github.ref_name }}\` | commit: \`${{ github.sha }}\` | by: ${{ github.actor }}\"}" \
             ${{ secrets.SLACK_WEBHOOK }} || true
 
-      - name: Slack ❌ failure
+      - name: Slack failure
         if: failure()
         run: |
           curl -s -X POST \
             -H 'Content-type: application/json' \
-            --data "{\"text\":\"❌ *Deploy FAILED* | branch: \`${{ github.ref_name }}\` | commit: \`${{ github.sha }}\`\"}" \
+            --data "{\"text\":\"❌ *Deploy FAILED* | branch: \`${{ github.ref_name }}\` | commit: \`${{ github.sha }}\` | by: ${{ github.actor }}\"}" \
             ${{ secrets.SLACK_WEBHOOK }} || true
 
       # ── Telegram notifications ────────────────────────────────────────
-      - name: Telegram ✅ success
+      - name: Telegram success
         if: success()
         run: |
           curl -s -X POST \
             "https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendMessage" \
             -H 'Content-type: application/json' \
-            --data "{
-              \"chat_id\": \"${{ secrets.TELEGRAM_CHAT_ID }}\",
-              \"text\": \"✅ Deploy OK\\nBranch: ${{ github.ref_name }}\\nCommit: ${{ github.sha }}\\nBy: ${{ github.actor }}\"
-            }" || true
+            --data "{\"chat_id\": \"${{ secrets.TELEGRAM_CHAT_ID }}\", \"text\": \"✅ Deploy OK\nBranch: ${{ github.ref_name }}\nCommit: ${{ github.sha }}\nBy: ${{ github.actor }}\"}" || true
 
-      - name: Telegram ❌ failure
+      - name: Telegram failure
         if: failure()
         run: |
           curl -s -X POST \
             "https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendMessage" \
             -H 'Content-type: application/json' \
-            --data "{
-              \"chat_id\": \"${{ secrets.TELEGRAM_CHAT_ID }}\",
-              \"text\": \"❌ Deploy FAILED\\nBranch: ${{ github.ref_name }}\\nCommit: ${{ github.sha }}\\nBy: ${{ github.actor }}\"
-            }" || true
+            --data "{\"chat_id\": \"${{ secrets.TELEGRAM_CHAT_ID }}\", \"text\": \"❌ Deploy FAILED\nBranch: ${{ github.ref_name }}\nCommit: ${{ github.sha }}\nBy: ${{ github.actor }}\"}" || true
