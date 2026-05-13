@@ -9,7 +9,7 @@ telegram_token: "8263460077:AAHYulXi7OqeHygQLMg_8pp-cY3zeF2ahfc"
 telegram_chat_id: "8646527871"
 
 # Slack
-slack_webhook_url: "https://hooks.slack.com/services/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"
+slack_webhook_url: 'https://hooks.slack.com/services/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'
 
 # Database
 db_host: "192.168.61.136"

@@ -14,5 +14,8 @@
     url: "{{ slack_webhook_url }}"
     method: POST
     body_format: json
+    status_code: 200
+    headers:
+      Content-Type: "application/json"
     body:
       text: "✅ *Deployment Success*: Load Balancer is alternating between Rocky nodes on Arch aarch64."
