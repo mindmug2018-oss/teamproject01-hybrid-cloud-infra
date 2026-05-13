@@ -151,7 +151,7 @@
 
             - name: 'slack-default'
               slack_configs:
-                - api_url: 'https://hooks.slack.com/services/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'
+                - api_url: "{{ slack_webhook_url }}"
                   channel: '#all-mindmug'
                   send_resolved: true
                   title: '[AWS][{{ "{{" }} .Status | toUpper {{ "}}" }}] {{ "{{" }} .GroupLabels.alertname {{ "}}" }}'
@@ -164,7 +164,7 @@
 
             - name: 'slack-and-recovery'
               slack_configs:
-                - api_url: 'https://hooks.slack.com/services/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'
+                - api_url: "{{ slack_webhook_url }}"
                   channel: '#all-mindmug'
                   send_resolved: true
                   title: '[AWS][CRITICAL] {{ "{{" }} .GroupLabels.alertname {{ "}}" }}'

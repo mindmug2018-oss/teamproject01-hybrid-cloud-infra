@@ -77,7 +77,7 @@
       User=user1
       WorkingDirectory=/opt/recovery
       ExecStart=/usr/local/bin/uvicorn webhook_server:app --host 0.0.0.0 --port 9080
-      Environment=SLACK_WEBHOOK_URL=https://hooks.slack.com/services/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
+      Environment=SLACK_WEBHOOK_URL={{ slack_webhook_url }}
       Restart=always
       RestartSec=5s
 

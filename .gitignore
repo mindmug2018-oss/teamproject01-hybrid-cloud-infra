@@ -32,3 +32,6 @@ terraform.tfvars
 inventory/hosts_aws.ini
 /var/log/
 *.log
+
+group_vars/all.yml
+playbooks/group_vars/all.yml

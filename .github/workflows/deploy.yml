@@ -89,23 +89,18 @@ jobs:
   # ── 3. Ansible Deploy ─────────────────────────────────────────────────
   deploy:
     name: Ansible deploy
-    # This targets the runner client agent installed locally on your on-premise server
     runs-on: self-hosted
     needs: docker
     steps:
       - name: Execute local pull and run playbook
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
         run: |
           set -e
-          echo "=== Deploy start: $(date) ==="
           cd ~/project1-onpremise
-          
-          # Fetches using the local SSH identity configuration fixed in Phase 2
           git pull origin main
-          
-          ansible-playbook playbooks/site.yml \
-            -i inventory/hosts.ini \
-            --diff
-          echo "=== Deploy complete: $(date) ==="
+          ansible-playbook playbooks/site.yml -i inventory/hosts.ini --diff
+
 
       # ── Slack notifications ───────────────────────────────────────────
       - name: Slack success
@@ -114,7 +109,7 @@ jobs:
           curl -s -X POST \
             -H 'Content-type: application/json' \
             --data "{\"text\":\"✅ *Deploy OK* | branch: \`${{ github.ref_name }}\` | commit: \`${{ github.sha }}\` | by: ${{ github.actor }}\"}" \
-            ${{ secrets.SLACK_WEBHOOK }} || true
+            "slack.com" || true
 
       - name: Slack failure
         if: failure()
@@ -122,7 +117,8 @@ jobs:
           curl -s -X POST \
             -H 'Content-type: application/json' \
             --data "{\"text\":\"❌ *Deploy FAILED* | branch: \`${{ github.ref_name }}\` | commit: \`${{ github.sha }}\` | by: ${{ github.actor }}\"}" \
-            ${{ secrets.SLACK_WEBHOOK }} || true
+            "slack.com" || true
+
 
       # ── Telegram notifications ────────────────────────────────────────
       - name: Telegram success
