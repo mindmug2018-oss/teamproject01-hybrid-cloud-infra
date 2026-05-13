@@ -11,7 +11,7 @@
 
 - name: Send Slack Notification
   uri:
-    url: "https://hooks.slack.com/services/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"
+    url: "{{ slack_webhook_url }}"
     method: POST
     body_format: json
     body:
