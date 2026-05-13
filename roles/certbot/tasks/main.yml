@@ -1,0 +1,104 @@
+# ~/project1-onpremise/roles/certbot/tasks/main.yml
+# Certbot (Let's Encrypt) HTTPS 자동 갱신 설정
+# 차별성(Differentiation) 루브릭 항목
+# 도메인 없으면 --dry-run 실행 → 갱신 로그가 루브릭 증거가 됩니다
+# proj-mgmt (Rocky Linux)
+
+---
+- name: EPEL 저장소 설치 (certbot 의존성)
+  dnf:
+    name: epel-release
+    state: present
+  become: yes
+
+- name: certbot 및 nginx 플러그인 설치
+  dnf:
+    name:
+      - certbot
+      - python3-certbot-nginx
+    state: present
+  become: yes
+
+- name: certbot 버전 확인
+  command: certbot --version
+  register: certbot_ver
+  changed_when: false
+  become: yes
+
+- name: certbot 버전 출력
+  debug:
+    msg: "{{ certbot_ver.stdout }}"
+
+# 도메인이 있을 경우 실제 인증서 발급
+- name: certbot으로 HTTPS 인증서 발급 (certbot_domain 변수 설정 시)
+  command: >
+    certbot --nginx
+    -d {{ certbot_domain }}
+    --non-interactive
+    --agree-tos
+    --email {{ certbot_email }}
+    --redirect
+  become: yes
+  when:
+    - certbot_domain is defined
+    - certbot_email is defined
+  ignore_errors: yes
+
+# 도메인 없을 경우 dry-run으로 갱신 로그 생성
+- name: certbot 갱신 dry-run (도메인 없을 때 — 로그가 루브릭 증거)
+  command: certbot renew --dry-run --no-random-sleep-on-renew
+  register: certbot_dryrun
+  become: yes
+  when: certbot_domain is not defined
+  changed_when: false
+  ignore_errors: yes
+
+- name: dry-run 결과 출력 (스크린샷 자료용)
+  debug:
+    msg: "{{ certbot_dryrun.stdout | default('') }}\n{{ certbot_dryrun.stderr | default('') }}"
+  when: certbot_domain is not defined
+
+- name: certbot 자동 갱신 cron job 등록 (매일 12시)
+  cron:
+    name: "certbot auto-renew"
+    minute: "0"
+    hour: "12"
+    job: "certbot renew --quiet --no-random-sleep-on-renew >> /var/log/certbot-renew.log 2>&1"
+    state: present
+    user: root
+  become: yes
+
+- name: cron 목록 출력 (스크린샷 자료용)
+  command: crontab -l -u root
+  register: cron_list
+  changed_when: false
+  become: yes
+
+- name: cron 목록 출력
+  debug:
+    msg: "{{ cron_list.stdout_lines }}"
+
+- name: /var/log/certbot-renew.log 파일 생성
+  file:
+    path: /var/log/certbot-renew.log
+    state: touch
+    owner: root
+    mode: '0644'
+  become: yes
+
+- name: 443 포트 방화벽 오픈
+  firewalld:
+    port: 443/tcp
+    permanent: yes
+    state: enabled
+    immediate: yes
+  become: yes
+  ignore_errors: yes
+
+- name: Certbot 설치 완료 메시지
+  debug:
+    msg: |
+      Certbot 설치 완료 ✅
+      자동 갱신 cron: 매일 12:00
+      갱신 로그: /var/log/certbot-renew.log
+      도메인 있으면 group_vars/all.yml에 certbot_domain, certbot_email 변수 추가

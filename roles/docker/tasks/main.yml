@@ -1,0 +1,94 @@
+---
+# roles/docker/tasks/main.yml
+# FIXED: Corrected Docker GPG key and repository URLs
+# ADDED: EPEL repo and stress tool for load testing
+
+# ── EPEL + stress (Rocky only) ────────────────────────────────────────
+- name: Install EPEL repository (Rocky Linux)
+  dnf:
+    name: epel-release
+    state: present
+  become: yes
+  when: ansible_os_family == "RedHat"
+
+- name: Install stress tool for load testing
+  dnf:
+    name: stress
+    state: present
+  become: yes
+  when: ansible_os_family == "RedHat"
+
+# ── Ubuntu (Debian) ───────────────────────────────────────────────────
+- name: Install Docker dependencies (Ubuntu)
+  apt:
+    name:
+      - apt-transport-https
+      - ca-certificates
+      - curl
+      - gnupg
+      - lsb-release
+    state: present
+    update_cache: yes
+  when: ansible_os_family == "Debian"
+
+- name: Create Docker keyring directory (Ubuntu)
+  file:
+    path: /etc/apt/keyrings
+    state: directory
+    mode: '0755'
+  become: yes
+  when: ansible_os_family == "Debian"
+
+- name: Add Docker GPG key (Ubuntu)
+  get_url:
+    url: https://download.docker.com/linux/ubuntu/gpg
+    dest: /etc/apt/keyrings/docker.asc
+    mode: '0644'
+  become: yes
+  when: ansible_os_family == "Debian"
+
+- name: Add Docker repository (Ubuntu)
+  apt_repository:
+    repo: >-
+      deb [arch=amd64 signed-by=/etc/apt/keyrings/docker.asc]
+      https://download.docker.com/linux/ubuntu
+      {{ ansible_distribution_release }} stable
+    state: present
+    filename: docker
+  become: yes
+  when: ansible_os_family == "Debian"
+
+# ── Rocky Linux (RedHat) ──────────────────────────────────────────────
+- name: Install Docker dependencies (Rocky)
+  dnf:
+    name: yum-utils
+    state: present
+  become: yes
+  when: ansible_os_family == "RedHat"
+
+- name: Add Docker repository (Rocky)
+  get_url:
+    url: https://download.docker.com/linux/centos/docker-ce.repo
+    dest: /etc/yum.repos.d/docker-ce.repo
+    mode: '0644'
+  become: yes
+  when: ansible_os_family == "RedHat"
+
+# ── Both distros ──────────────────────────────────────────────────────
+- name: Install Docker Engine
+  package:
+    name:
+      - docker-ce
+      - docker-ce-cli
+      - containerd.io
+      - docker-compose-plugin
+    state: present
+  become: yes
+  notify: Restart Docker
+
+- name: Ensure Docker is started and enabled
+  service:
+    name: docker
+    state: started
+    enabled: yes
+  become: yes

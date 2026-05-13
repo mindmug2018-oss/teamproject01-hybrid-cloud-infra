@@ -1,0 +1,8 @@
+# ~/project1-onpremise/roles/cloudflared/handlers/main.yml
+---
+- name: restart cloudflared
+  systemd:
+    name: cloudflared-temp
+    state: restarted
+    daemon_reload: yes
+  become: yes

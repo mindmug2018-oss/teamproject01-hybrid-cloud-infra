@@ -1,0 +1,8 @@
+# roles/docker_fastapi/handlers/main.yml
+---
+- name: restart fastapi container
+  community.docker.docker_container:
+    name: fastapi
+    image: fastapi-app:latest
+    state: started
+    restart: yes

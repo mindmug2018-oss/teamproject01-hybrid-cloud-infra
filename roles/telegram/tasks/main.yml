@@ -1,0 +1,18 @@
+---
+- name: Send Telegram Notification
+  uri:
+    url: "https://api.telegram.org/bot8263460077:AAHYulXi7OqeHygQLMg_8pp-cY3zeF2ahfc/sendMessage"
+    method: POST
+    body_format: json
+    body:
+      chat_id: "8646527871"
+      text: "🚀 Deployment Successful on Arch aarch64! Load Balancer is active."
+  run_once: true
+
+- name: Send Slack Notification
+  uri:
+    url: "https://hooks.slack.com/services/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"
+    method: POST
+    body_format: json
+    body:
+      text: "✅ *Deployment Success*: Load Balancer is alternating between Rocky nodes on Arch aarch64."

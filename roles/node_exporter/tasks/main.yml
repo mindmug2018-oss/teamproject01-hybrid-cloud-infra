@@ -1,10 +1,14 @@
-# ~/project/roles/node_exporter/tasks/main.yml
----
-- name: node_exporter 바이너리 다운로드
+- name: mgmt에서 node_exporter 다운로드
   get_url:
-    url: https://github.com/prometheus/node_exporter/releases/download/v1.7.0/node_exporter-1.7.0.linux-amd64.tar.gz
+    url: "https://github.com/prometheus/node_exporter/releases/download/v1.7.0/node_exporter-1.7.0.linux-{{ 'arm64' if ansible_architecture == 'aarch64' else 'amd64' }}.tar.gz"
+    dest: "/tmp/node_exporter.tar.gz"
+    force: yes
+  delegate_to: localhost
+
+- name: node_exporter 바이너리 전송
+  copy:
+    src: /tmp/node_exporter.tar.gz
     dest: /tmp/node_exporter.tar.gz
-    mode: '0644'
 
 - name: 압축 해제
   unarchive:
@@ -14,11 +18,17 @@
 
 - name: 바이너리 이동
   copy:
-    src: /tmp/node_exporter-1.7.0.linux-amd64/node_exporter
+    src: "/tmp/node_exporter-1.7.0.linux-{{ 'arm64' if ansible_architecture == 'aarch64' else 'amd64' }}/node_exporter"
     dest: /usr/local/bin/node_exporter
     mode: '0755'
     remote_src: yes
+    force: yes
   become: yes
+
+- name: SELinux 컨텍스트 복원
+  command: restorecon -v /usr/local/bin/node_exporter
+  become: yes
+  when: ansible_os_family == "RedHat"
 
 - name: systemd 서비스 등록
   copy:

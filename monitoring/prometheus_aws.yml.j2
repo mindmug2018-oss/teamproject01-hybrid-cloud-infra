@@ -1,0 +1,43 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets: ['localhost:9093']
+
+rule_files:
+  - "alert.rules.yml"
+
+scrape_configs:
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['localhost:9090']
+
+  - job_name: 'node-mgmt'
+    static_configs:
+      - targets: ['localhost:9100']
+        labels: {instance: 'proj-mgmt'}
+
+  # Automatically loops through all Rocky nodes in your inventory
+  {% for host in groups['rocky'] %}
+  - job_name: 'node-{{ host }}'
+    static_configs:
+      - targets: ['{{ host }}:9100']
+        labels: {instance: 'proj-{{ host }}'}
+
+  - job_name: 'fastapi-{{ host }}'
+    static_configs:
+      - targets: ['{{ host }}:8000']
+        labels: {instance: 'proj-{{ host }}'}
+    metrics_path: '/metrics'
+  {% endfor %}
+
+  # Ubuntu node
+  {% for host in groups['ubuntu'] %}
+  - job_name: 'node-{{ host }}'
+    static_configs:
+      - targets: ['{{ host }}:9100']
+        labels: {instance: 'proj-{{ host }}'}
+  {% endfor %}

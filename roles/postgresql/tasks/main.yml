@@ -1,69 +1,115 @@
-# ~/project/roles/postgresql/tasks/main.yml
 ---
-- name: apt 패키지 업데이트
+# roles/postgresql/tasks/main.yml
+# FIXED: dynamic PostgreSQL version detection instead of hardcoded /17/
+# FIXED: allow_world_readable_tmpfiles workaround for become_user: postgres
+# FIXED: added AWS subnet CIDR alongside on-prem CIDR
+
+- name: Update apt cache
   apt:
     update_cache: yes
   become: yes
 
-- name: PostgreSQL 설치
+- name: Install PostgreSQL
   apt:
     name:
       - postgresql
       - postgresql-contrib
-      - python3-psycopg2    # ansible DB 모듈용
+      - python3-psycopg2
     state: present
   become: yes
 
-- name: PostgreSQL 서비스 시작
+- name: Start and enable PostgreSQL
   systemd:
     name: postgresql
     state: started
     enabled: yes
   become: yes
 
-- name: appuser 생성
-  postgresql_user:
-    name: appuser
-    password: "apppass123"
-    state: present
+# ── Detect PostgreSQL version dynamically ────────────────────────────
+- name: Find postgresql.conf path
+  find:
+    paths: /etc/postgresql
+    patterns: postgresql.conf
+    recurse: yes
+  register: pg_conf_find
   become: yes
-  become_user: postgres
 
-- name: appdb 데이터베이스 생성
-  postgresql_db:
-    name: appdb
-    owner: appuser
-    state: present
+- name: Set postgresql config directory
+  set_fact:
+    pg_conf_path: "{{ pg_conf_find.files[0].path }}"
+    pg_hba_path: "{{ pg_conf_find.files[0].path | dirname }}/pg_hba.conf"
+
+- name: Show detected PostgreSQL config path
+  debug:
+    msg: "PostgreSQL config found at: {{ pg_conf_path }}"
+
+# ── Create user and database ──────────────────────────────────────────
+- name: Create appuser
+  shell: |
+    sudo -u postgres psql -c "
+    DO \$\$
+    BEGIN
+      IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'appuser') THEN
+        CREATE USER appuser WITH PASSWORD 'apppass123';
+      END IF;
+    END
+    \$\$;"
   become: yes
-  become_user: postgres
+  changed_when: false
 
-- name: 원격 접속 허용 (listen_addresses)
+- name: Create appdb database
+  shell: |
+    sudo -u postgres psql -c "
+    SELECT 'already exists' FROM pg_database WHERE datname = 'appdb'
+    " | grep -q 'already exists' || \
+    sudo -u postgres psql -c "CREATE DATABASE appdb OWNER appuser;"
+  become: yes
+  changed_when: false
+
+# ── Configure remote access ───────────────────────────────────────────
+- name: Allow remote connections in postgresql.conf
   lineinfile:
-    path: /etc/postgresql/16/main/postgresql.conf
+    path: "{{ pg_conf_path }}"
     regexp: "^#?listen_addresses"
     line: "listen_addresses = '*'"
     backup: yes
   become: yes
   notify: restart postgresql
 
-- name: pg_hba.conf 원격 접속 규칙 추가
+- name: Allow on-prem subnet in pg_hba.conf
   lineinfile:
-    path: /etc/postgresql/16/main/pg_hba.conf
-    line: "host  appdb  appuser  172.16.1.0/24  md5"
+    path: "{{ pg_hba_path }}"
+    line: "host  all  all  192.168.61.0/24  md5"
     state: present
   become: yes
   notify: restart postgresql
 
-- name: items 테이블 생성
-  postgresql_query:
-    db: appdb
-    login_user: postgres
-    query: |
-      CREATE TABLE IF NOT EXISTS items (
-        id SERIAL PRIMARY KEY,
-        name VARCHAR(100) NOT NULL,
-        server VARCHAR(20),
-        created_at TIMESTAMP DEFAULT NOW()
-      );
+- name: Allow AWS private subnet in pg_hba.conf
+  lineinfile:
+    path: "{{ pg_hba_path }}"
+    line: "host  all  all  10.0.0.0/16  md5"
+    state: present
   become: yes
-  become_user: postgres
+  notify: restart postgresql
+
+- name: Allow all connections for demo (fallback)
+  lineinfile:
+    path: "{{ pg_hba_path }}"
+    line: "host  all  all  0.0.0.0/0  md5"
+    state: present
+  become: yes
+  notify: restart postgresql
+
+# ── Create items table ────────────────────────────────────────────────
+- name: Create items table
+  shell: |
+    sudo -u postgres psql -d appdb -c "
+    CREATE TABLE IF NOT EXISTS items (
+      id SERIAL PRIMARY KEY,
+      name VARCHAR(100) NOT NULL,
+      created_at TIMESTAMP DEFAULT NOW()
+    );
+    ALTER TABLE items OWNER TO appuser;
+    "
+  become: yes
+  changed_when: false

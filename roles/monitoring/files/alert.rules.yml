@@ -1,17 +1,14 @@
-# ~/project/roles/monitoring/files/alert.rules.yml
-
 groups:
   - name: project_alerts
     rules:
-
       - alert: FastAPIDown
         expr: up{job=~"fastapi-.*"} == 0
         for: 30s
         labels:
           severity: critical
         annotations:
-          summary: "FastAPI 다운: {{ $labels.instance }}"
-          description: "{{ $labels.instance }} FastAPI가 30초 이상 응답 없음"
+          summary: "FastAPI Down: {{ $labels.instance }}"
+          description: "{{ $labels.instance }} FastAPI has not responded for 30 seconds"
 
       - alert: NodeDown
         expr: up{job=~"node-.*"} == 0
@@ -19,24 +16,23 @@ groups:
         labels:
           severity: critical
         annotations:
-          summary: "서버 다운: {{ $labels.instance }}"
+          summary: "Server Down: {{ $labels.instance }}"
+          description: "{{ $labels.instance }} has been unreachable for 1 minute"
 
       - alert: HighCPU
-        expr: >
-          100 - (avg by(instance)
-          (rate(node_cpu_seconds_total{mode="idle"}[5m])) * 100) > 80
-        for: 5m
+        expr: 100 - (avg by(instance)(rate(node_cpu_seconds_total{mode="idle"}[1m])) * 100) > 40
+        for: 1m
         labels:
           severity: warning
         annotations:
-          summary: "CPU 과부하: {{ $labels.instance }} ({{ $value | printf \"%.1f\" }}%)"
+          summary: "High CPU: {{ $labels.instance }} ({{ $value | printf \"%.1f\" }}%)"
+          description: "{{ $labels.instance }} CPU has been above 40% for 1 minute"
 
       - alert: HighMemory
-        expr: >
-          (1 - node_memory_MemAvailable_bytes /
-          node_memory_MemTotal_bytes) * 100 > 85
+        expr: (1 - node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes) * 100 > 85
         for: 3m
         labels:
           severity: warning
         annotations:
-          summary: "메모리 부족: {{ $labels.instance }}"
+          summary: "Low Memory: {{ $labels.instance }}"
+          description: "{{ $labels.instance }} memory usage is above 85%"

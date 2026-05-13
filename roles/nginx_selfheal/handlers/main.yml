@@ -1,0 +1,8 @@
+# ~/project1-onpremise/roles/nginx_selfheal/handlers/main.yml
+---
+- name: reload systemd and restart nginx
+  systemd:
+    name: nginx
+    state: restarted
+    daemon_reload: yes
+  become: yes

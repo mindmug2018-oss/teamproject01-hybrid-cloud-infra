@@ -7,7 +7,6 @@ global:
 alerting:
   alertmanagers:
     - static_configs:
-      # - targets: ['alertmanager:9093'] # Docker 버전
         - targets: ['localhost:9093']    # # No-Docker 버전(같은 호스트에서 실행)
 
 rule_files:
@@ -20,32 +19,32 @@ scrape_configs:
 
   - job_name: 'node-mgmt'
     static_configs:
-      - targets: ['172.16.1.150:9100']
+      - targets: ['192.168.61.133:9100']
         labels: {instance: 'proj-mgmt'}
 
   - job_name: 'node-rocky1'
     static_configs:
-      - targets: ['172.16.1.151:9100']
-        labels: {instance: 'proj-rocky1'}
+      - targets: ['192.168.61.134:9100']
+        labels: {instance: 'proj-rocky01'}
 
   - job_name: 'node-rocky2'
     static_configs:
-      - targets: ['172.16.1.152:9100']
-        labels: {instance: 'proj-rocky2'}
+      - targets: ['192.168.61.135:9100']
+        labels: {instance: 'proj-rocky02'}
 
   - job_name: 'node-ubuntu1'
     static_configs:
-      - targets: ['172.16.1.153:9100']
-        labels: {instance: 'proj-ubuntu1'}
+      - targets: ['192.168.61.136:9100']
+        labels: {instance: 'proj-ubuntu01'}
 
   - job_name: 'fastapi-rocky1'
     static_configs:
-      - targets: ['172.16.1.151:8000']
-        labels: {instance: 'proj-rocky1'}
+      - targets: ['192.168.61.134:8000']
+        labels: {instance: 'proj-rocky01'}
     metrics_path: '/metrics'
 
   - job_name: 'fastapi-rocky2'
     static_configs:
-      - targets: ['172.16.1.152:8000']
-        labels: {instance: 'proj-rocky2'}
+      - targets: ['192.168.61.135:8000']
+        labels: {instance: 'proj-rocky02'}
     metrics_path: '/metrics'

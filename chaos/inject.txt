@@ -1,0 +1,92 @@
+#!/bin/bash
+# Chaos Engineering Injection Script
+# Usage: ./inject.sh [scenario]
+# Scenarios: fastapi1 | fastapi2 | nginx1 | nginx2 | db | cpu1 | haproxy | all | status
+
+SLACK="https://hooks.slack.com/services/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"
+TELEGRAM_TOKEN="8263460077:AAHYulXi7OqeHygQLMg_8pp-cY3zeF2ahfc"
+TELEGRAM_CHAT_ID="8646527871"
+LOG="/var/log/chaos.log"
+
+notify(){
+  echo "[$(date '+%H:%M:%S')] $1" | tee -a $LOG
+
+  # Slack notification
+  [ -n "$SLACK" ] && curl -s -X POST "$SLACK" \
+    -H 'Content-type: application/json' \
+    --data "{\"text\":\"[CHAOS] $1\"}" > /dev/null
+
+  # Telegram notification
+  [ -n "$TELEGRAM_TOKEN" ] && curl -s -X POST \
+    "https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendMessage" \
+    -H 'Content-type: application/json' \
+    --data "{\"chat_id\": \"${TELEGRAM_CHAT_ID}\", \"text\": \"[CHAOS] $1\"}" > /dev/null
+}
+
+case $1 in
+  fastapi1)
+    notify "Injecting failure: Stopping FastAPI on proj-rocky1"
+    ssh 192.168.61.134 "sudo docker stop fastapi"
+    notify "Done: FastAPIDown alert expected within 30 seconds"
+    ;;
+  fastapi2)
+    notify "Injecting failure: Stopping FastAPI on proj-rocky2"
+    ssh 192.168.61.135 "sudo docker stop fastapi"
+    notify "Done: FastAPIDown alert expected within 30 seconds"
+    ;;
+  nginx1)
+    notify "Injecting failure: Stopping Nginx on proj-rocky1"
+    ssh 192.168.61.134 "sudo systemctl stop nginx"
+    notify "Done: Self-heal test started - Nginx should auto-restart within 5 seconds"
+    ;;
+  nginx2)
+    notify "Injecting failure: Stopping Nginx on proj-rocky2"
+    ssh 192.168.61.135 "sudo systemctl stop nginx"
+    notify "Done: Self-heal test started - Nginx should auto-restart within 5 seconds"
+    ;;
+  db)
+    notify "Injecting failure: Stopping PostgreSQL on proj-ubuntu1"
+    ssh 192.168.61.136 "sudo systemctl stop postgresql"
+    notify "Done: NodeDown alert expected within 1 minute"
+    ;;
+  cpu1)
+    notify "Injecting failure: CPU overload on proj-rocky1 (120 seconds)"
+    ssh 192.168.61.134 \
+      "nohup stress --cpu $(nproc) --timeout 120s > /dev/null 2>&1 &"
+    notify "Done: HighCPU alert expected within 1-2 minutes"
+    ;;
+  haproxy)
+    notify "Injecting failure: Stopping HAProxy (load balancer down)"
+    sudo systemctl stop haproxy
+    notify "Done: Service unreachable - run ./inject.sh all to recover"
+    ;;
+  all)
+    notify "Starting full service recovery"
+    ssh 192.168.61.134 "sudo docker rm -f fastapi; sudo docker run -d --name fastapi --restart always -p 8000:8000 -e DATABASE_URL=postgresql://appuser:apppass123@192.168.61.136:5432/appdb fastapi-app:latest && sudo systemctl start nginx" && \
+      notify "rocky1 fastapi + nginx recovered"
+    ssh 192.168.61.135 "sudo docker rm -f fastapi; sudo docker run -d --name fastapi --restart always -p 8000:8000 -e DATABASE_URL=postgresql://appuser:apppass123@192.168.61.136:5432/appdb fastapi-app:latest && sudo systemctl start nginx" && \
+      notify "rocky2 fastapi + nginx recovered"
+    ssh 192.168.61.136 "sudo systemctl start postgresql" && \
+      notify "ubuntu1 postgresql recovered"
+    sudo systemctl start haproxy && \
+      notify "haproxy recovered"
+    notify "All services recovered successfully"
+    ;;
+  status)
+    echo "=== Full Service Status ==="
+    echo -n "HAProxy:      " && sudo systemctl is-active haproxy
+    echo -n "FastAPI-r1:   " && ssh 192.168.61.134 "docker inspect -f '{{.State.Status}}' fastapi"
+    echo -n "Nginx-r1:     " && ssh 192.168.61.134 "systemctl is-active nginx"
+    echo -n "FastAPI-r2:   " && ssh 192.168.61.135 "docker inspect -f '{{.State.Status}}' fastapi"
+    echo -n "Nginx-r2:     " && ssh 192.168.61.135 "systemctl is-active nginx"
+    echo -n "PostgreSQL:   " && ssh 192.168.61.136 "systemctl is-active postgresql"
+    echo -n "Prometheus:   " && sudo systemctl is-active prometheus
+    echo -n "Grafana:      " && sudo systemctl is-active grafana-server
+    echo -n "AlertManager: " && sudo systemctl is-active alertmanager
+    echo -n "Recovery:     " && sudo systemctl is-active recovery
+    ;;
+  *)
+    echo "Usage: $0 [fastapi1|fastapi2|nginx1|nginx2|db|cpu1|haproxy|all|status]"
+    exit 1
+    ;;
+esac

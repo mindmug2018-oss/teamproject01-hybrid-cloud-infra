@@ -1,0 +1,6 @@
+---
+- name: Install Docker on all servers
+  hosts: rocky, mgmt
+  become: yes
+  roles:
+    - docker

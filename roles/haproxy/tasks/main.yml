@@ -1,12 +1,13 @@
-# ~/project/roles/haproxy/tasks/main.yml
 ---
-- name: HAProxy 설치
+# roles/haproxy/tasks/main.yml
+
+- name: Install HAProxy
   dnf:
     name: haproxy
     state: present
   become: yes
 
-- name: HAProxy 설정 파일 배포
+- name: Deploy HAProxy config
   copy:
     dest: /etc/haproxy/haproxy.cfg
     content: |
@@ -28,9 +29,11 @@
 
       backend app_servers
           balance roundrobin
-          option  httpchk GET /health
-          server  rocky1 172.16.1.151:80 check inter 5s fall 3 rise 2
-          server  rocky2 172.16.1.152:80 check inter 5s fall 3 rise 2
+          option  httpchk
+          http-check send meth GET uri /health ver HTTP/1.1 hdr Host localhost
+          http-check expect status 200
+          server rocky1 {{ groups['rocky'][0] }}:8000 check inter 5s fall 3 rise 2
+          server rocky2 {{ groups['rocky'][1] }}:8000 check inter 5s fall 3 rise 2
 
       frontend stats
           bind *:8404
@@ -42,9 +45,32 @@
   become: yes
   notify: restart haproxy
 
-- name: HAProxy 서비스 시작
+- name: Validate HAProxy config before starting
+  command: haproxy -c -f /etc/haproxy/haproxy.cfg
+  become: yes
+  changed_when: false
+
+- name: Install SELinux policy tools
+  dnf:
+    name: policycoreutils-python-utils
+    state: present
+  become: yes
+  when: ansible_os_family == "RedHat"
+  ignore_errors: yes
+
+- name: Allow HAProxy to connect to any port (SELinux)
+  seboolean:
+    name: haproxy_connect_any
+    state: yes
+    persistent: yes
+  become: yes
+  when: ansible_os_family == "RedHat"
+  ignore_errors: yes
+
+- name: Start and enable HAProxy
   systemd:
     name: haproxy
     state: started
     enabled: yes
+    daemon_reload: yes
   become: yes

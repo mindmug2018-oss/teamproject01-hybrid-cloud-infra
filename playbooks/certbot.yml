@@ -1,0 +1,7 @@
+# ~/project1-onpremise/playbooks/certbot.yml
+---
+- name: Certbot HTTPS 자동 갱신 설정
+  hosts: mgmt
+  become: yes
+  roles:
+    - certbot

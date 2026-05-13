@@ -1,0 +1,148 @@
+---
+# roles/prometheus_bot/tasks/main.yml
+# FIXED: ghcr.io/incaller/prometheus_bot is amd64-only, won't run on arm64.
+# Solution: build the binary from source using Go (native arm64 compile).
+
+# ── Install Go (needed to build from source) ──────────────────────────
+- name: Check if Go is already installed
+  command: go version
+  register: go_check
+  changed_when: false
+  ignore_errors: yes
+
+- name: Download Go 1.22 for arm64
+  get_url:
+    url: "https://go.dev/dl/go1.22.3.linux-arm64.tar.gz"
+    dest: /tmp/go.tar.gz
+    mode: '0644'
+  when: go_check.rc != 0
+  become: yes
+
+- name: Extract Go to /usr/local
+  unarchive:
+    src: /tmp/go.tar.gz
+    dest: /usr/local
+    remote_src: yes
+  when: go_check.rc != 0
+  become: yes
+
+- name: Add Go to system PATH
+  copy:
+    dest: /etc/profile.d/go.sh
+    content: |
+      export PATH=$PATH:/usr/local/go/bin
+    mode: '0644'
+  become: yes
+
+# ── Build prometheus_bot from source ──────────────────────────────────
+- name: Install git (needed to clone repo)
+  package:
+    name: git
+    state: present
+  become: yes
+
+- name: Clone prometheus_bot repository
+  git:
+    repo: https://github.com/inCaller/prometheus_bot.git
+    dest: /tmp/prometheus_bot
+    version: master
+    force: yes
+
+- name: Build prometheus_bot binary (native arm64)
+  shell: |
+    export PATH=$PATH:/usr/local/go/bin
+    export HOME=/root
+    cd /tmp/prometheus_bot
+    go build -o prometheus_bot .
+  args:
+    creates: /tmp/prometheus_bot/prometheus_bot
+  become: yes
+
+- name: Install prometheus_bot binary to /usr/local/bin
+  copy:
+    src: /tmp/prometheus_bot/prometheus_bot
+    dest: /usr/local/bin/prometheus_bot
+    mode: '0755'
+    remote_src: yes
+  become: yes
+
+# ── Config directory and files ────────────────────────────────────────
+- name: Create prometheus_bot config directory
+  file:
+    path: /etc/prometheus_bot
+    state: directory
+    mode: '0755'
+  become: yes
+
+- name: Write prometheus_bot config.yaml
+  copy:
+    dest: /etc/prometheus_bot/config.yaml
+    content: |
+      telegram_token: "8263460077:AAHYulXi7OqeHygQLMg_8pp-cY3zeF2ahfc"
+      template_path: "/etc/prometheus_bot/template.tmpl"
+      time_zone: "Asia/Seoul"
+      split_msg_byte: 4000
+    mode: '0644'
+  become: yes
+
+- name: Write prometheus_bot alert template
+  copy:
+    dest: /etc/prometheus_bot/template.tmpl
+    content: |
+      {% raw %}{{ range .Alerts }}
+      {{ if eq .Status "firing" }}🔴 *ALERT: {{ .Labels.alertname }}*{{ else }}✅ *RESOLVED: {{ .Labels.alertname }}*{{ end }}
+      *Severity:* {{ .Labels.severity }}
+      *Instance:* {{ .Labels.instance }}
+      *Summary:* {{ .Annotations.summary }}
+      {{ end }}{% endraw %}
+    mode: '0644'
+  become: yes
+
+# ── systemd service (runs as binary, not Docker) ──────────────────────
+- name: Create prometheus_bot systemd service
+  copy:
+    dest: /etc/systemd/system/prometheus_bot.service
+    content: |
+      [Unit]
+      Description=Prometheus Telegram Bot
+      After=network.target
+
+      [Service]
+      Type=simple
+      User=user1
+      ExecStart=/usr/local/bin/prometheus_bot -c /etc/prometheus_bot/config.yaml
+      Restart=always
+      RestartSec=5s
+      StandardOutput=journal
+      StandardError=journal
+
+      [Install]
+      WantedBy=multi-user.target
+    mode: '0644'
+  become: yes
+  notify: restart prometheus_bot
+
+- name: Reload systemd daemon
+  systemd:
+    daemon_reload: yes
+  become: yes
+
+- name: Start and enable prometheus_bot service
+  systemd:
+    name: prometheus_bot
+    state: started
+    enabled: yes
+  become: yes
+
+# ── Verify ────────────────────────────────────────────────────────────
+- name: Wait for prometheus_bot to be ready on port 9087
+  uri:
+    url: "http://localhost:9087"
+    status_code: [200, 404]
+  retries: 10
+  delay: 3
+  ignore_errors: yes
+
+- name: Confirm prometheus_bot is running
+  debug:
+    msg: "prometheus_bot built from source and running on port 9087"

@@ -1,0 +1,7 @@
+# ~/project1-onpremise/playbooks/nginx_selfheal.yml
+---
+- name: Nginx 자가치유 설정 (Restart=always)
+  hosts: rocky
+  become: yes
+  roles:
+    - nginx_selfheal

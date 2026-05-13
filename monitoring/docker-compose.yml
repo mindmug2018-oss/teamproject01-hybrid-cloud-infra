@@ -1,7 +1,5 @@
 # ~/project/monitoring/docker-compose.yml
 
-version: '3.8'
-
 services:
   prometheus:
     image: prom/prometheus:latest
@@ -47,8 +45,8 @@ services:
   node-exporter:
     image: prom/node-exporter:latest
     container_name: node-exporter
-    ports:
-      - "9100:9100"
+    network_mode: "host"
+    pid: "host"
     volumes:
       - /proc:/host/proc:ro
       - /sys:/host/sys:ro
@@ -56,8 +54,11 @@ services:
     command:
       - '--path.procfs=/host/proc'
       - '--path.sysfs=/host/sys'
-      - '--collector.filesystem.mount-points-exclude=^/(sys|proc|dev|run)($$|/)'
+      - '--collector.filesystem.mount-points-exclude=^/(sys|proc|dev|run)'
     restart: unless-stopped
+
+networks:
+  monitoring:
 
 volumes:
   prometheus_data:

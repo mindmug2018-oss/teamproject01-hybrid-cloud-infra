@@ -1,0 +1,7 @@
+# ~/project1-onpremise/roles/prometheus_bot/handlers/main.yml
+---
+- name: restart prometheus_bot
+  systemd:
+    name: prometheus_bot
+    state: restarted
+  become: yes

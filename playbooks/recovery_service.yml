@@ -1,0 +1,7 @@
+# ~/project1-onpremise/playbooks/recovery_service.yml
+---
+- name: Auto Recovery Webhook 서버 배포 (포트 9080)
+  hosts: mgmt
+  become: yes
+  roles:
+    - recovery_service

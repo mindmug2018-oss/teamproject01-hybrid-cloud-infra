@@ -1,13 +1,22 @@
-# ~/project/roles/monitoring/handlers/main.yml
 ---
+# roles/monitoring/handlers/main.yml
+
 - name: restart prometheus
   systemd:
     name: prometheus
     state: restarted
+    daemon_reload: yes
   become: yes
 
 - name: restart alertmanager
   systemd:
     name: alertmanager
+    state: restarted
+    daemon_reload: yes
+  become: yes
+
+- name: restart grafana
+  systemd:
+    name: grafana-server
     state: restarted
   become: yes

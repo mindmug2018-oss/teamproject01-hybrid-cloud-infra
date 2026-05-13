@@ -1,5 +1,6 @@
-# ~/project/roles/postgresql/handlers/main.yml
 ---
+# roles/postgresql/handlers/main.yml
+
 - name: restart postgresql
   systemd:
     name: postgresql

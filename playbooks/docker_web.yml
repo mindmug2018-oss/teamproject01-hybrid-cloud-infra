@@ -1,0 +1,7 @@
+---
+- name: Deploy FastAPI (Docker) and Nginx (Systemd)
+  hosts: rocky
+  become: yes
+  roles:
+    - docker_fastapi  # This builds and runs the container
+    - nginx           # This installs and configures Nginx on the host

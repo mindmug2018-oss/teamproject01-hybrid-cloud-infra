@@ -8,7 +8,7 @@ import socket
 app = FastAPI(title="Project API")
 Instrumentator().instrument(app).expose(app)
 
-DB_URL = "postgresql://appuser:apppass123@172.16.1.153:5432/appdb"
+DB_URL = "postgresql://appuser:apppass123@192.168.61.136:5432/appdb"
 engine = create_engine(DB_URL, pool_pre_ping=True)
 
 @app.get("/health")

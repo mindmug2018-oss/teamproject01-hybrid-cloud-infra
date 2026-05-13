@@ -25,11 +25,11 @@ RECOVERY_MAP = {
 
 # Prometheus job 이름 → 대상 호스트 IP 매핑
 HOST_MAP = {
-    "fastapi-rocky1": "172.16.1.151",
-    "fastapi-rocky2": "172.16.1.152",
-    "node-rocky1":    "172.16.1.151",
-    "node-rocky2":    "172.16.1.152",
-    "node-ubuntu1":   "172.16.1.153",
+    "fastapi-rocky1": "192.168.61.134",
+    "fastapi-rocky2": "192.168.61.135",
+    "node-rocky1":    "192.168.61.134",
+    "node-rocky2":    "192.168.61.135",
+    "node-ubuntu1":   "192.168.61.136",
 }
 
 class Alert(BaseModel):

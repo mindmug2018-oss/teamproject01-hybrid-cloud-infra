@@ -1,66 +1,217 @@
-# ~/project/roles/monitoring/tasks/main-docker.yml
-
-# Docker 버전 — monitoring role
 ---
-- name: Docker 설치 (Rocky Linux)
-  dnf:
-    name:
-      - docker-ce
-      - docker-ce-cli
-      - containerd.io
-      - docker-compose-plugin
-    state: present
-  become: yes
+# playbooks/monitoring-docker.yml
+# Docker version — Prometheus, Grafana, Alertmanager as containers
+# FIXED: node-mgmt uses ansible_default_ipv4.address instead of localhost
+# so Prometheus can reach node-exporter from inside the Docker network
 
-- name: Docker 서비스 시작
-  systemd:
-    name: docker
-    state: started
-    enabled: yes
+- name: Install Node Exporter on all servers
+  hosts: all
   become: yes
+  roles:
+    - node_exporter
 
-- name: user1을 docker 그룹에 추가
-  user:
-    name: user1
-    groups: docker
-    append: yes
+- name: Deploy Docker monitoring stack on mgmt
+  hosts: mgmt
   become: yes
+  tasks:
 
-- name: 모니터링 설정 디렉토리 생성
-  file:
-    path: /opt/monitoring
-    state: directory
-    owner: user1
-    mode: '0755'
-  become: yes
+    - name: Get mgmt private IP
+      set_fact:
+        mgmt_private_ip: "{{ ansible_default_ipv4.address }}"
 
-- name: prometheus.yml 배포
-  copy:
-    src: prometheus.yml
-    dest: /opt/monitoring/prometheus.yml
-  become: yes
+    - name: Create monitoring directory
+      file:
+        path: /opt/monitoring
+        state: directory
+        owner: user1
+        mode: '0755'
 
-- name: alert.rules.yml 배포
-  copy:
-    src: alert.rules.yml
-    dest: /opt/monitoring/alert.rules.yml
-  become: yes
+    - name: Deploy prometheus.yml (Docker version)
+      copy:
+        dest: /opt/monitoring/prometheus.yml
+        content: |
+          global:
+            scrape_interval: 15s
+            evaluation_interval: 15s
 
-- name: alertmanager.yml 배포
-  copy:
-    src: alertmanager.yml
-    dest: /opt/monitoring/alertmanager.yml
-  become: yes
+          alerting:
+            alertmanagers:
+              - static_configs:
+                  - targets: ['alertmanager:9093']
 
-- name: docker-compose.yml 배포
-  copy:
-    src: docker-compose.yml
-    dest: /opt/monitoring/docker-compose.yml
-  become: yes
+          rule_files:
+            - "alert.rules.yml"
 
-- name: Docker Compose로 모니터링 스택 실행
-  community.docker.docker_compose_v2:
-    project_src: /opt/monitoring
-    state: present
-  become: yes
-  become_user: user1
+          scrape_configs:
+            - job_name: 'prometheus'
+              static_configs:
+                - targets: ['localhost:9090']
+
+            - job_name: 'node-mgmt'
+              static_configs:
+                  # FIXED: use actual host IP not localhost
+                  # localhost inside Docker = container, not host
+                - targets: ['{{ mgmt_private_ip }}:9100']
+                  labels: {instance: 'proj-mgmt'}
+
+            - job_name: 'node-rocky'
+              static_configs:
+                - targets:
+                    {% for host in groups['rocky'] %}
+                    - '{{ host }}:9100'
+                    {% endfor %}
+
+            - job_name: 'node-ubuntu'
+              static_configs:
+                - targets:
+                    {% for host in groups['ubuntu'] %}
+                    - '{{ host }}:9100'
+                    {% endfor %}
+
+            - job_name: 'fastapi'
+              static_configs:
+                - targets:
+                    {% for host in groups['rocky'] %}
+                    - '{{ host }}:8000'
+                    {% endfor %}
+              metrics_path: '/metrics'
+        owner: user1
+        mode: '0644'
+
+    - name: Deploy alert.rules.yml
+      copy:
+        src: "{{ playbook_dir }}/../roles/monitoring/files/alert.rules.yml"
+        dest: /opt/monitoring/alert.rules.yml
+        owner: user1
+        mode: '0644'
+
+    - name: Deploy alertmanager.yml
+      copy:
+        src: "{{ playbook_dir }}/../roles/monitoring/files/alertmanager.yml"
+        dest: /opt/monitoring/alertmanager.yml
+        owner: user1
+        mode: '0644'
+
+    - name: Deploy docker-compose.yml for monitoring
+      copy:
+        dest: /opt/monitoring/docker-compose.yml
+        content: |
+          services:
+            prometheus:
+              image: prom/prometheus:latest
+              container_name: prometheus
+              ports:
+                - "9090:9090"
+              volumes:
+                - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
+                - ./alert.rules.yml:/etc/prometheus/alert.rules.yml:ro
+                - prometheus_data:/prometheus
+              command:
+                - '--config.file=/etc/prometheus/prometheus.yml'
+                - '--storage.tsdb.retention.time=15d'
+                - '--web.enable-lifecycle'
+              restart: unless-stopped
+              networks:
+                - monitoring
+              extra_hosts:
+                - "host.docker.internal:host-gateway"
+
+            alertmanager:
+              image: prom/alertmanager:latest
+              container_name: alertmanager
+              ports:
+                - "9093:9093"
+              volumes:
+                - ./alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
+              restart: unless-stopped
+              networks:
+                - monitoring
+
+            grafana:
+              image: grafana/grafana:latest
+              container_name: grafana
+              ports:
+                - "3000:3000"
+              volumes:
+                - grafana_data:/var/lib/grafana
+              environment:
+                - GF_SECURITY_ADMIN_USER=admin
+                - GF_SECURITY_ADMIN_PASSWORD=admin123
+                - GF_AUTH_ANONYMOUS_ENABLED=false
+              restart: unless-stopped
+              networks:
+                - monitoring
+
+            node-exporter:
+              image: prom/node-exporter:latest
+              container_name: node-exporter
+              ports:
+                - "9100:9100"
+              volumes:
+                - /proc:/host/proc:ro
+                - /sys:/host/sys:ro
+                - /:/rootfs:ro
+              command:
+                - '--path.procfs=/host/proc'
+                - '--path.sysfs=/host/sys'
+                - '--collector.filesystem.mount-points-exclude=^/(sys|proc|dev|run)($$|/)'
+              restart: unless-stopped
+              network_mode: host
+
+          networks:
+            monitoring:
+              driver: bridge
+
+          volumes:
+            prometheus_data:
+            grafana_data:
+        owner: user1
+        mode: '0644'
+
+    - name: Stop systemd node_exporter if running
+      systemd:
+        name: node_exporter
+        state: stopped
+        enabled: no
+      ignore_errors: yes
+
+    - name: Stop existing monitoring stack if running
+      community.docker.docker_compose_v2:
+        project_src: /opt/monitoring
+        state: absent
+      ignore_errors: yes
+
+    - name: Start monitoring stack with Docker Compose
+      community.docker.docker_compose_v2:
+        project_src: /opt/monitoring
+        state: present
+
+    - name: Wait for Prometheus to be ready
+      uri:
+        url: "http://localhost:9090/-/healthy"
+        status_code: 200
+      retries: 15
+      delay: 5
+      ignore_errors: yes
+
+    - name: Open monitoring ports in firewall
+      firewalld:
+        port: "{{ item }}/tcp"
+        permanent: yes
+        state: enabled
+        immediate: yes
+      loop:
+        - "9090"
+        - "9093"
+        - "3000"
+        - "9100"
+      ignore_errors: yes
+
+    - name: Show running monitoring containers
+      command: docker ps --format "table {{ '{{' }}.Names{{ '}}' }}\t{{ '{{' }}.Status{{ '}}' }}\t{{ '{{' }}.Ports{{ '}}' }}"
+      register: docker_ps
+      changed_when: false
+
+    - name: Display containers
+      debug:
+        msg: "{{ docker_ps.stdout }}"

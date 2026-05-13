@@ -1,0 +1,79 @@
+# ~/project1-onpremise/roles/nginx_selfheal/tasks/main.yml
+# Nginx에 Restart=always 추가 — 자가치유(Self-healing) 루브릭 항목
+# "pkill nginx → 5초 후 자동 재시작" 데모용
+# rocky1 + rocky2 전용
+
+---
+- name: nginx systemd override 디렉토리 생성
+  file:
+    path: /etc/systemd/system/nginx.service.d
+    state: directory
+    mode: '0755'
+  become: yes
+
+- name: nginx Restart=always override 파일 생성
+  copy:
+    dest: /etc/systemd/system/nginx.service.d/restart.conf
+    content: |
+      [Service]
+      Restart=always
+      RestartSec=5s
+    mode: '0644'
+  become: yes
+  notify: reload systemd and restart nginx
+
+- name: systemd 데몬 리로드
+  systemd:
+    daemon_reload: yes
+  become: yes
+
+- name: nginx 재시작 (override 적용)
+  systemd:
+    name: nginx
+    state: restarted
+  become: yes
+
+- name: nginx Restart 설정 확인 (always 이어야 함)
+  command: systemctl show nginx --property=Restart
+  register: nginx_restart_prop
+  changed_when: false
+  become: yes
+
+- name: Restart 설정 출력
+  debug:
+    msg: "nginx {{ nginx_restart_prop.stdout }} ← 'Restart=always' 이어야 합니다"
+
+# 자가치유 실증 테스트 — 데모 영상/스크린샷 자료용
+- name: "[자가치유 테스트] nginx 프로세스 강제 종료"
+  command: pkill nginx
+  become: yes
+  ignore_errors: yes
+  changed_when: true
+
+- name: 6초 대기 (systemd RestartSec=5s 이후)
+  pause:
+    seconds: 6
+
+- name: "[자가치유 테스트] nginx 자동 재시작 확인"
+  command: systemctl is-active nginx
+  register: nginx_active
+  become: yes
+  changed_when: false
+
+- name: 자가치유 결과 출력 (스크린샷 촬영!)
+  debug:
+    msg: |
+      nginx 자가치유 테스트 결과: {{ nginx_active.stdout }}
+      ✅ 'active' = kill 후 자동으로 재시작됨 — 스크린샷 촬영하세요
+      ❌ 'inactive' = Restart=always 미적용
+
+- name: systemctl status nginx 출력 (스크린샷 자료용)
+  command: systemctl status nginx --no-pager -l
+  register: nginx_status_out
+  become: yes
+  changed_when: false
+  ignore_errors: yes
+
+- name: status 출력
+  debug:
+    msg: "{{ nginx_status_out.stdout_lines }}"

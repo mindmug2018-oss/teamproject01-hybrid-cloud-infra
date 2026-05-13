@@ -20,3 +20,15 @@ Thumbs.db
 
 # 로그
 *.log
+
+#terraform
+terraform/.terraform/
+.terraform.lock.hcl
+terraform.tfstate
+terraform.tfstate.backup
+terraform.tfvars
+*.pem
+
+inventory/hosts_aws.ini
+/var/log/
+*.log

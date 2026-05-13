@@ -1,0 +1,31 @@
+---
+# playbooks/site_aws.yml
+# AWS EC2 deployment — identical to site.yml but uses Docker monitoring stack
+#
+# Usage:
+#   ansible-playbook playbooks/site_aws.yml -i inventory/hosts_aws.ini
+#
+# Differences from site.yml:
+#   - monitoring-docker.yml instead of monitoring.yml
+#   - prometheus.yml uses alertmanager:9093 (Docker network hostname)
+
+# 1. Infrastructure Layer
+- import_playbook: docker_install.yml      # Docker engine on all nodes
+- import_playbook: db.yml                  # PostgreSQL on ubuntu1
+- import_playbook: mgmt.yml                # HAProxy on mgmt
+
+# 2. Application Layer
+- import_playbook: docker_web.yml          # FastAPI Docker + Nginx on rocky1/rocky2
+
+# 3. Operations & Self-Healing
+- import_playbook: nginx_selfheal.yml
+- import_playbook: monitoring-docker.yml   # Prometheus + Grafana + Alertmanager as Docker
+- import_playbook: prometheus_bot.yml      # Telegram bridge
+- import_playbook: prometheus_connect_docker.yml  # Pipeline validation
+- import_playbook: recovery_service.yml    # Webhook auto-recovery
+
+# 4. External Access & Security
+- import_playbook: certbot.yml             # HTTPS/SSL
+
+# 5. Final Notification
+- import_playbook: notify.yml

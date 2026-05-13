@@ -1,40 +1,49 @@
-# ~/project/roles/monitoring/tasks/main.yml
 ---
-# ── Prometheus ────────────────────────────────────────────
-- name: prometheus 전용 유저 생성
+# roles/monitoring/tasks/main.yml
+
+# ── Prometheus ────────────────────────────────────────────────────────
+- name: Create prometheus user
   user:
     name: prometheus
-    shell: /sbin/nologin
+    system: yes
+    shell: /bin/false
     create_home: no
   become: yes
 
-- name: prometheus 디렉토리 생성
+- name: Create prometheus directories
   file:
     path: "{{ item }}"
     state: directory
     owner: prometheus
     group: prometheus
+    mode: '0755'
   loop:
     - /etc/prometheus
     - /var/lib/prometheus
   become: yes
 
-- name: prometheus 바이너리 다운로드
-  get_url:
-    url: https://github.com/prometheus/prometheus/releases/download/v2.51.0/prometheus-2.51.0.linux-amd64.tar.gz
-    dest: /tmp/prometheus.tar.gz
+- name: Gather architecture fact
+  setup:
+    filter: ansible_architecture
   become: yes
 
-- name: prometheus 압축 해제
+- name: Download Prometheus binary
+  get_url:
+    url: "https://github.com/prometheus/prometheus/releases/download/v2.51.0/prometheus-2.51.0.linux-{{ 'arm64' if ansible_architecture == 'aarch64' else 'amd64' }}.tar.gz"
+    dest: /tmp/prometheus.tar.gz
+    force: no
+  become: yes
+
+- name: Extract Prometheus
   unarchive:
     src: /tmp/prometheus.tar.gz
-    dest: /tmp/
+    dest: /tmp
     remote_src: yes
   become: yes
 
-- name: prometheus 바이너리 설치
+- name: Install Prometheus binaries
   copy:
-    src: "/tmp/prometheus-2.51.0.linux-amd64/{{ item }}"
+    src: "/tmp/prometheus-2.51.0.linux-{{ 'arm64' if ansible_architecture == 'aarch64' else 'amd64' }}/{{ item }}"
     dest: "/usr/local/bin/{{ item }}"
     mode: '0755'
     remote_src: yes
@@ -43,9 +52,9 @@
     - promtool
   become: yes
 
-- name: prometheus console 파일 복사
+- name: Copy Prometheus console files
   copy:
-    src: "/tmp/prometheus-2.51.0.linux-amd64/{{ item }}"
+    src: "/tmp/prometheus-2.51.0.linux-{{ 'arm64' if ansible_architecture == 'aarch64' else 'amd64' }}/{{ item }}"
     dest: "/etc/prometheus/{{ item }}"
     remote_src: yes
     owner: prometheus
@@ -54,7 +63,7 @@
     - console_libraries
   become: yes
 
-- name: prometheus 설정 파일 배포
+- name: Deploy prometheus.yml config
   copy:
     src: prometheus.yml
     dest: /etc/prometheus/prometheus.yml
@@ -63,7 +72,7 @@
   become: yes
   notify: restart prometheus
 
-- name: alert rules 파일 배포
+- name: Deploy alert rules
   copy:
     src: alert.rules.yml
     dest: /etc/prometheus/alert.rules.yml
@@ -72,7 +81,7 @@
   become: yes
   notify: restart prometheus
 
-- name: prometheus systemd 서비스 등록
+- name: Create Prometheus systemd service
   copy:
     dest: /etc/systemd/system/prometheus.service
     content: |
@@ -81,20 +90,29 @@
       After=network.target
 
       [Service]
+      Type=simple
       User=prometheus
       ExecStart=/usr/local/bin/prometheus \
         --config.file=/etc/prometheus/prometheus.yml \
         --storage.tsdb.path=/var/lib/prometheus \
-        --storage.tsdb.retention.time=15d \
-        --web.enable-lifecycle
+        --web.console.templates=/etc/prometheus/consoles \
+        --web.console.libraries=/etc/prometheus/console_libraries
       Restart=always
+      RestartSec=5s
 
       [Install]
       WantedBy=multi-user.target
     mode: '0644'
   become: yes
+  notify: restart prometheus
 
-- name: prometheus 서비스 시작
+- name: Restore SELinux context for prometheus
+  command: restorecon -v /usr/local/bin/prometheus /usr/local/bin/promtool
+  become: yes
+  when: ansible_os_family == "RedHat"
+  ignore_errors: yes
+
+- name: Start and enable Prometheus
   systemd:
     name: prometheus
     state: started
@@ -102,41 +120,44 @@
     daemon_reload: yes
   become: yes
 
-# ── AlertManager ──────────────────────────────────────────
-- name: alertmanager 전용 유저 생성
+# ── Alertmanager ──────────────────────────────────────────────────────
+- name: Create alertmanager user
   user:
     name: alertmanager
-    shell: /sbin/nologin
+    system: yes
+    shell: /bin/false
     create_home: no
   become: yes
 
-- name: alertmanager 디렉토리 생성
+- name: Create alertmanager directories
   file:
     path: "{{ item }}"
     state: directory
     owner: alertmanager
     group: alertmanager
+    mode: '0755'
   loop:
     - /etc/alertmanager
     - /var/lib/alertmanager
   become: yes
 
-- name: alertmanager 바이너리 다운로드
+- name: Download Alertmanager binary
   get_url:
-    url: https://github.com/prometheus/alertmanager/releases/download/v0.27.0/alertmanager-0.27.0.linux-amd64.tar.gz
+    url: "https://github.com/prometheus/alertmanager/releases/download/v0.27.0/alertmanager-0.27.0.linux-{{ 'arm64' if ansible_architecture == 'aarch64' else 'amd64' }}.tar.gz"
     dest: /tmp/alertmanager.tar.gz
+    force: no
   become: yes
 
-- name: alertmanager 압축 해제
+- name: Extract Alertmanager
   unarchive:
     src: /tmp/alertmanager.tar.gz
-    dest: /tmp/
+    dest: /tmp
     remote_src: yes
   become: yes
 
-- name: alertmanager 바이너리 설치
+- name: Install Alertmanager binaries
   copy:
-    src: "/tmp/alertmanager-0.27.0.linux-amd64/{{ item }}"
+    src: "/tmp/alertmanager-0.27.0.linux-{{ 'arm64' if ansible_architecture == 'aarch64' else 'amd64' }}/{{ item }}"
     dest: "/usr/local/bin/{{ item }}"
     mode: '0755'
     remote_src: yes
@@ -145,7 +166,7 @@
     - amtool
   become: yes
 
-- name: alertmanager 설정 파일 배포
+- name: Deploy alertmanager.yml config
   copy:
     src: alertmanager.yml
     dest: /etc/alertmanager/alertmanager.yml
@@ -154,7 +175,7 @@
   become: yes
   notify: restart alertmanager
 
-- name: alertmanager systemd 서비스 등록
+- name: Create Alertmanager systemd service
   copy:
     dest: /etc/systemd/system/alertmanager.service
     content: |
@@ -163,18 +184,27 @@
       After=network.target
 
       [Service]
+      Type=simple
       User=alertmanager
       ExecStart=/usr/local/bin/alertmanager \
         --config.file=/etc/alertmanager/alertmanager.yml \
         --storage.path=/var/lib/alertmanager
       Restart=always
+      RestartSec=5s
 
       [Install]
       WantedBy=multi-user.target
     mode: '0644'
   become: yes
+  notify: restart alertmanager
 
-- name: alertmanager 서비스 시작
+- name: Restore SELinux context for alertmanager
+  command: restorecon -v /usr/local/bin/alertmanager /usr/local/bin/amtool
+  become: yes
+  when: ansible_os_family == "RedHat"
+  ignore_errors: yes
+
+- name: Start and enable Alertmanager
   systemd:
     name: alertmanager
     state: started
@@ -182,56 +212,53 @@
     daemon_reload: yes
   become: yes
 
-# ── Grafana ───────────────────────────────────────────────
-- name: grafana yum 저장소 추가
-  copy:
-    dest: /etc/yum.repos.d/grafana.repo
-    content: |
-      [grafana]
-      name=grafana
-      baseurl=https://rpm.grafana.com
-      repo_gpgcheck=1
-      enabled=1
-      gpgcheck=1
-      gpgkey=https://rpm.grafana.com/gpg.key
-      sslverify=1
-      sslcacert=/etc/pki/tls/certs/ca-bundle.crt
+# ── Grafana ───────────────────────────────────────────────────────────
+- name: Add Grafana yum repository
+  yum_repository:
+    name: grafana
+    description: Grafana OSS
+    baseurl: https://packages.grafana.com/oss/rpm
+    gpgcheck: yes
+    gpgkey: https://packages.grafana.com/gpg.key
+    enabled: yes
   become: yes
+  when: ansible_os_family == "RedHat"
 
-- name: grafana 설치
-  dnf:
+- name: Install Grafana
+  package:
     name: grafana
     state: present
   become: yes
 
-- name: grafana 서비스 시작
+- name: Start and enable Grafana
   systemd:
     name: grafana-server
     state: started
     enabled: yes
+    daemon_reload: yes
   become: yes
 
-# ── 방화벽 설정 ──────────────────────────────────────────
-- name: firewalld 서비스 시작 및 활성화
-  systemd:
+# ── Firewall ──────────────────────────────────────────────────────────
+- name: Start and enable firewalld
+  service:
     name: firewalld
     state: started
     enabled: yes
   become: yes
-  ignore_errors: yes  # firewalld 패키지 자체가 없는 경우를 대비
+  ignore_errors: yes
 
-# ── 방화벽 포트 오픈 ──────────────────────────────────────
-- name: 모니터링 포트 오픈
+- name: Open monitoring ports
   firewalld:
     port: "{{ item }}/tcp"
     permanent: yes
     state: enabled
     immediate: yes
   loop:
-    - "9090"   # Prometheus
-    - "9093"   # AlertManager
-    - "3000"   # Grafana
-    - "9080"   # Recovery Server
-    - "9100"   # Node Exporter
+    - "9090"
+    - "9093"
+    - "3000"
+    - "9087"
+    - "9080"
+    - "9100"
   become: yes
-  ignore_errors: yes   # SELinux disabled 환경에서 firewalld 없을 수 있음
+  ignore_errors: yes

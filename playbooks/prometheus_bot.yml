@@ -1,0 +1,6 @@
+---
+- name: Install prometheus-bot Telegram bridge on mgmt
+  hosts: mgmt
+  become: yes
+  roles:
+    - prometheus_bot

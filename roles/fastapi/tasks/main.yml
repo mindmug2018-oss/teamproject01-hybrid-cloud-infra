@@ -14,13 +14,13 @@
 - name: FastAPI 관련 패키지 설치 (Python 3.6 호환 버전 명시)
   pip:
     name:
-      - "fastapi==0.83.0"
-      - "uvicorn==0.16.0"
-      - "sqlalchemy==1.4.41"
-      - "psycopg2-binary==2.9.3"
-      - "prometheus-fastapi-instrumentator==5.7.1"
-      - "greenlet==1.1.2"    # <--- 에러 방지를 위해 낮은 버전 고정
-      - "typing-extensions<4.0.0" # Python 3.6용
+      - "fastapi>=0.83.0"
+      - "uvicorn>=0.16.0"
+      - "sqlalchemy>=1.4.41"
+      - "psycopg2-binary>=2.9.9"
+      - "prometheus-fastapi-instrumentator>=5.7.1"
+      - "greenlet>=3.0.0"    # <--- 에러 방지를 위해 낮은 버전 고정
+      - "typing-extensions" # Python 3.6용
     state: present
     executable: pip3
   become: yes
@@ -53,7 +53,7 @@
       Type=simple
       User=user1
       WorkingDirectory=/opt/app
-      ExecStart=/usr/local/bin/uvicorn main:app --host 0.0.0.0 --port 8000 --workers 2
+      ExecStart=/usr/bin/python3 -m uvicorn main:app --host 0.0.0.0 --port 8000 --workers 2
       Restart=always
       RestartSec=5
 

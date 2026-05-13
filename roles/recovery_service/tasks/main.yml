@@ -1,0 +1,122 @@
+---
+# roles/recovery_service/tasks/main.yml
+# recovery/webhook_server.py를 systemd 서비스로 자동 배포
+# Alertmanager → 포트 9080 → webhook_server.py → SSH로 서비스 자동 재시작
+
+- name: Install pip3
+  dnf:
+    name: python3-pip
+    state: present
+  become: yes
+  when: ansible_os_family == "RedHat"
+
+- name: Python 의존성 설치 (recovery 서버용)
+  pip:
+    name:
+      - fastapi==0.111.0
+      - uvicorn==0.30.1
+      - httpx==0.27.0
+      - pydantic==2.7.1
+    state: present
+    executable: pip3
+  become: yes
+
+- name: recovery 서버 디렉토리 생성
+  file:
+    path: /opt/recovery
+    state: directory
+    owner: user1
+    mode: '0755'
+  become: yes
+
+- name: webhook_server.py 배포
+  copy:
+    src: "{{ playbook_dir }}/../recovery/webhook_server.py"
+    dest: /opt/recovery/webhook_server.py
+    owner: user1
+    mode: '0644'
+  become: yes
+  notify: restart recovery
+
+- name: restart_service.sh 배포
+  copy:
+    src: "{{ playbook_dir }}/../recovery/scripts/restart_service.sh"
+    dest: /opt/recovery/restart_service.sh
+    owner: user1
+    mode: '0755'
+  become: yes
+
+- name: SSH 키 권한 확인 (recovery가 SSH로 원격 서버 접근)
+  file:
+    path: /home/user1/.ssh/teamproj01ansiblekey.pem
+    mode: '0600'
+    owner: user1
+  become: yes
+  ignore_errors: yes
+
+# FIXED: create log file before starting service so user1 has write permission
+- name: Create recovery log file with correct ownership
+  file:
+    path: /var/log/recovery.log
+    state: touch
+    owner: user1
+    group: user1
+    mode: '0644'
+  become: yes
+
+- name: recovery 서버 systemd 서비스 등록
+  copy:
+    dest: /etc/systemd/system/recovery.service
+    content: |
+      [Unit]
+      Description=Auto Recovery Webhook Server
+      After=network.target
+
+      [Service]
+      Type=simple
+      User=user1
+      WorkingDirectory=/opt/recovery
+      ExecStart=/usr/local/bin/uvicorn webhook_server:app --host 0.0.0.0 --port 9080
+      Environment=SLACK_WEBHOOK_URL=https://hooks.slack.com/services/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
+      Restart=always
+      RestartSec=5s
+
+      [Install]
+      WantedBy=multi-user.target
+    mode: '0644'
+  become: yes
+  notify: restart recovery
+
+- name: systemd 데몬 리로드
+  systemd:
+    daemon_reload: yes
+  become: yes
+
+- name: recovery 서비스 시작 및 활성화
+  systemd:
+    name: recovery
+    state: started
+    enabled: yes
+  become: yes
+
+- name: 포트 9080 방화벽 오픈
+  firewalld:
+    port: 9080/tcp
+    permanent: yes
+    state: enabled
+    immediate: yes
+  become: yes
+  ignore_errors: yes
+
+- name: recovery 서버 헬스 확인 (포트 9080)
+  uri:
+    url: "http://localhost:9080/health"
+    status_code: 200
+  register: recovery_health
+  until: recovery_health.status == 200
+  retries: 10
+  delay: 3
+
+- name: recovery 서버 상태 출력
+  debug:
+    msg: "Auto Recovery 서버 포트 9080에서 실행 중 ✅"

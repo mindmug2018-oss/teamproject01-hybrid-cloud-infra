@@ -1,13 +1,18 @@
-# ~/project/roles/monitoring/files/prometheus.yml
+# roles/monitoring/files/prometheus.yml
+# On-prem version — binaries, not Docker
+# ADDED: environment=onprem labels so alerts are distinguishable from AWS
 
 global:
   scrape_interval: 15s
   evaluation_interval: 15s
+  external_labels:
+    environment: 'onprem'
+    location: 'vmware'
 
 alerting:
   alertmanagers:
     - static_configs:
-        - targets: ['alertmanager:9093']
+        - targets: ['localhost:9093']
 
 rule_files:
   - "alert.rules.yml"
@@ -19,32 +24,44 @@ scrape_configs:
 
   - job_name: 'node-mgmt'
     static_configs:
-      - targets: ['172.16.1.150:9100']
-        labels: {instance: 'proj-mgmt'}
+      - targets: ['192.168.61.133:9100']
+        labels:
+          instance: 'onprem-mgmt'
+          environment: 'onprem'
 
   - job_name: 'node-rocky1'
     static_configs:
-      - targets: ['172.16.1.151:9100']
-        labels: {instance: 'proj-rocky1'}
+      - targets: ['192.168.61.134:9100']
+        labels:
+          instance: 'onprem-rocky1'
+          environment: 'onprem'
 
   - job_name: 'node-rocky2'
     static_configs:
-      - targets: ['172.16.1.152:9100']
-        labels: {instance: 'proj-rocky2'}
+      - targets: ['192.168.61.135:9100']
+        labels:
+          instance: 'onprem-rocky2'
+          environment: 'onprem'
 
   - job_name: 'node-ubuntu1'
     static_configs:
-      - targets: ['172.16.1.153:9100']
-        labels: {instance: 'proj-ubuntu1'}
+      - targets: ['192.168.61.136:9100']
+        labels:
+          instance: 'onprem-ubuntu1'
+          environment: 'onprem'
 
   - job_name: 'fastapi-rocky1'
     static_configs:
-      - targets: ['172.16.1.151:8000']
-        labels: {instance: 'proj-rocky1'}
+      - targets: ['192.168.61.134:8000']
+        labels:
+          instance: 'onprem-rocky1'
+          environment: 'onprem'
     metrics_path: '/metrics'
 
   - job_name: 'fastapi-rocky2'
     static_configs:
-      - targets: ['172.16.1.152:8000']
-        labels: {instance: 'proj-rocky2'}
+      - targets: ['192.168.61.135:8000']
+        labels:
+          instance: 'onprem-rocky2'
+          environment: 'onprem'
     metrics_path: '/metrics'

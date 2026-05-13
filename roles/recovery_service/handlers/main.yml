@@ -1,0 +1,8 @@
+# ~/project1-onpremise/roles/recovery_service/handlers/main.yml
+---
+- name: restart recovery
+  systemd:
+    name: recovery
+    state: restarted
+    daemon_reload: yes
+  become: yes

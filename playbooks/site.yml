@@ -1,6 +1,34 @@
-# ~/project/playbooks/site.yml — 전체 한 번에 실행
+# ~/project1-onpremise/playbooks/site.yml
+# 전체 한 번에 실행
+# 실행 순서 중요 — 변경하지 마세요
+#
+# 실행 방법:
+#   cd ~/project1-onpremise
+#   ansible-playbook playbooks/site.yml --syntax-check
+#   ansible-playbook playbooks/site.yml
+#
+# 멱등성 확인 (두 번째 실행 — changed=0 스크린샷):
+#   ansible-playbook playbooks/site.yml
 ---
-- import_playbook: mgmt.yml
-- import_playbook: db.yml
-- import_playbook: web.yml
-- import_playbook: monitoring.yml
+# 1. Infrastructure Layer
+- import_playbook: docker_install.yml     # NEW — Must run first to install Docker engine
+- import_playbook: db.yml                 # Database setup
+- import_playbook: mgmt.yml               # HAProxy setup
+
+# 2. Application Layer (Migration to Docker)
+# - import_playbook: web.yml              # REMOVED — This was the old systemd version
+- import_playbook: docker_web.yml         # NEW — Runs FastAPI in Docker + Nginx on Host
+
+# 3. Operations & Self-Healing
+- import_playbook: nginx_selfheal.yml     # Ensures Nginx stays alive
+- import_playbook: monitoring.yml         # Prometheus + Grafana
+- import_playbook: prometheus_bot.yml     # Telegram Bridge
+- import_playbook: prometheus_connect.yml # Pipeline Validation
+- import_playbook: recovery_service.yml   # Webhook Auto-recovery
+
+# 4. External Access & Security
+- import_playbook: cloudflared.yml        # Cloudflare Tunnel
+- import_playbook: certbot.yml            # HTTPS/SSL
+
+# 5. Final Notification
+- import_playbook: notify.yml             # Final Alert

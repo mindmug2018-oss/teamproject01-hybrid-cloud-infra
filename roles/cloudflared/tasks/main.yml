@@ -1,0 +1,93 @@
+---
+# roles/cloudflared/tasks/main.yml
+# FIXED: ansible_architecture fact was not available on mgmt (facts disabled)
+# Solution: use setup module to explicitly gather architecture fact,
+# then use it for the download URL
+
+- name: Gather architecture fact explicitly
+  setup:
+    filter: ansible_architecture
+  become: yes
+
+- name: Download cloudflared RPM for correct architecture
+  get_url:
+    url: "https://github.com/cloudflare/cloudflared/releases/download/2026.3.0/cloudflared-linux-{{ 'aarch64' if ansible_architecture == 'aarch64' else 'x86_64' }}.rpm"
+    dest: /tmp/cloudflared.rpm
+    force: yes
+    mode: '0644'
+  become: yes
+
+- name: Install cloudflared RPM
+  dnf:
+    name: /tmp/cloudflared.rpm
+    state: present
+    disable_gpg_check: yes
+  become: yes
+
+- name: Restore SELinux context
+  command: restorecon -v /usr/bin/cloudflared
+  become: yes
+  when: ansible_os_family == "RedHat"
+  ignore_errors: yes
+
+- name: Verify cloudflared version
+  command: cloudflared --version
+  register: cf_version
+  changed_when: false
+  become: yes
+
+- name: Print cloudflared version
+  debug:
+    msg: "{{ cf_version.stdout }}"
+
+- name: Register cloudflared temp tunnel systemd service
+  copy:
+    dest: /etc/systemd/system/cloudflared-temp.service
+    content: |
+      [Unit]
+      Description=Cloudflare Tunnel (temp public URL)
+      After=network.target
+
+      [Service]
+      Type=simple
+      User=user1
+      ExecStart=/usr/bin/cloudflared tunnel --url http://localhost:80 --no-autoupdate
+      Restart=always
+      RestartSec=10s
+      StandardOutput=journal
+      StandardError=journal
+
+      [Install]
+      WantedBy=multi-user.target
+    mode: '0644'
+  become: yes
+  notify: restart cloudflared
+
+- name: Reload systemd daemon
+  systemd:
+    daemon_reload: yes
+  become: yes
+
+- name: Start and enable cloudflared-temp service
+  systemd:
+    name: cloudflared-temp
+    state: started
+    enabled: yes
+  become: yes
+
+- name: Wait 15 seconds for tunnel URL to generate
+  pause:
+    seconds: 15
+
+- name: Check tunnel URL in journal
+  command: journalctl -u cloudflared-temp -n 30 --no-pager
+  register: cf_journal
+  changed_when: false
+  become: yes
+
+- name: Print tunnel URL
+  debug:
+    msg: |
+      {{ cf_journal.stdout }}
+      ↑↑↑ Find the https://xxxx.trycloudflare.com URL above
+      Open that URL in your browser to confirm public access (take a screenshot!)

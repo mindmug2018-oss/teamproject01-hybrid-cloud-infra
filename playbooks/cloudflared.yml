@@ -1,0 +1,7 @@
+# ~/project1-onpremise/playbooks/cloudflared.yml
+---
+- name: Cloudflare Tunnel 설치 (공개 URL 제공)
+  hosts: mgmt
+  become: yes
+  roles:
+    - cloudflared

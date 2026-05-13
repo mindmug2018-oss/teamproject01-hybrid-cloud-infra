@@ -1,0 +1,10 @@
+groups:
+  - name: test
+    rules:
+      - alert: TestAlertFiring
+        expr: vector(1) == 1
+        for: 10s
+        labels:
+          severity: warning
+        annotations:
+          summary: "Manual test alert - this should fire immediately"
