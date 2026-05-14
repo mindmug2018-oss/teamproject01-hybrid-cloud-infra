@@ -85,9 +85,10 @@
         owner: user1
         mode: '0644'
 
+    
     - name: Deploy alertmanager.yml
-      copy:
-        src: "{{ playbook_dir }}/../roles/monitoring/files/alertmanager.yml"
+      template:
+        src: "{{ playbook_dir }}/../roles/monitoring/templates/alertmanager.yml.j2"
         dest: /opt/monitoring/alertmanager.yml
         owner: user1
         mode: '0644'
