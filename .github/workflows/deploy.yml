@@ -263,6 +263,9 @@ jobs:
             -i inventory/hosts_aws.ini \
             --ssh-common-args='-o StrictHostKeyChecking=no' \
             --diff
+        env:
+          # This forces Ansible to look inside the runner's current repository checkout folder
+          ANSIBLE_ROLES_PATH: ${{ github.workspace }}/roles
 
       # ── Verify deployment ────────────────────────────────────────────
       - name: Verify AWS health check
