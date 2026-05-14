@@ -31,19 +31,20 @@ receivers:
 
   - name: 'slack-default'
     slack_configs:
-      - api_url: '{{ slack_webhook_url }}'
+      - api_url: '{{ slack_webhook_url }}'   # Ansible will replace this correctly
         channel: '#all-mindmug'
         send_resolved: true
-        title: '[{{ .Status | toUpper }}] {{ .GroupLabels.alertname }}'
-        text: '{{ range .Alerts }}{{ .Annotations.summary }}{{ end }}'
+        # Wrap Go templates in {% raw %} tags below:
+        title: '{% raw %}[{{ .Status | toUpper }}] {{ .GroupLabels.alertname }}{% endraw %}'
+        text: '{% raw %}{{ range .Alerts }}{{ .Annotations.summary }}{{ end }}{% endraw %}'
 
   - name: 'slack-and-recovery'
     slack_configs:
-      - api_url: '{{ slack_webhook_url }}'
+      - api_url: '{{ slack_webhook_url }}'   # Ansible will replace this correctly
         channel: '#all-mindmug'
         send_resolved: true
-        title: '[CRITICAL] {{ .GroupLabels.alertname }}'
-        text: '{{ range .Alerts }}{{ .Annotations.summary }}{{ end }}'
+        title: '{% raw %}[CRITICAL] {{ .GroupLabels.alertname }}{% endraw %}'
+        text: '{% raw %}{{ range .Alerts }}{{ .Annotations.summary }}{{ end }}{% endraw %}'
     webhook_configs:
       - url: 'http://localhost:9080/alert'
         send_resolved: false
