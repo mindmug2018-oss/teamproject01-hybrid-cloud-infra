@@ -209,7 +209,7 @@ jobs:
 
       # ── Generate Ansible inventory from Terraform outputs ──────────
       - name: Generate hosts_aws.ini
-        working-directory: ${{ env.TF_DIR }}
+        working-directory: terraform
         run: |
           MGMT_IP=$(terraform output -raw mgmt_public_ip)
           ROCKY1_IP=$(terraform output -raw rocky1_private_ip)
@@ -225,6 +225,10 @@ jobs:
           ${ROCKY2_IP} ansible_user=user1 ansible_ssh_common_args='-o ProxyJump=user1@${MGMT_IP} -o StrictHostKeyChecking=no'
 
           [ubuntu]
+          ${UBUNTU1_IP} ansible_user=user1 ansible_ssh_common_args='-o ProxyJump=user1@${MGMT_IP} -o StrictHostKeyChecking=no'
+
+          # ADD THIS BLOCK TO MAP THE TUNNEL TO THE DB PLAYBOOK TARGET:
+          [db]
           ${UBUNTU1_IP} ansible_user=user1 ansible_ssh_common_args='-o ProxyJump=user1@${MGMT_IP} -o StrictHostKeyChecking=no'
 
           [all:vars]
@@ -262,9 +266,9 @@ jobs:
           ansible-playbook playbooks/site_aws.yml \
             -i inventory/hosts_aws.ini \
             --ssh-common-args='-o StrictHostKeyChecking=no' \
+            --extra-vars "slack_webhook_url=${{ secrets.SLACK_WEBHOOK_URL }}" \
             --diff
         env:
-          # This forces Ansible to look inside the runner's current repository checkout folder
           ANSIBLE_ROLES_PATH: ${{ github.workspace }}/roles
 
       # ── Verify deployment ────────────────────────────────────────────
