@@ -192,6 +192,7 @@ jobs:
 
       - name: Run terraform apply
         run: |
+          cd $TF_DIR
           terraform apply -auto-approve \
             -var="public_key_path=$HOME/.ssh/teamproj01ansiblekey.pub" \
             -var="admin_cidr=0.0.0.0/0"
@@ -204,6 +205,7 @@ jobs:
           AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           AWS_DEFAULT_REGION: ap-northeast-2
           TF_VAR_slack_webhook_url: ${{ secrets.SLACK_WEBHOOK_URL }}
+
 
       # ── Generate Ansible inventory from Terraform outputs ──────────
       - name: Generate hosts_aws.ini
