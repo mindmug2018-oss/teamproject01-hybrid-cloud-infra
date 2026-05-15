@@ -44,22 +44,13 @@ variable "public_key_path" {
   default = "~/.ssh/teamproj01ansiblekey.pub"
 }
 
+
 variable "rocky_ami_id" {
-  type    = string
-  default = "ami-0ee85600490b4d45d" # 🌟 Official Rocky Linux 9 AS of 2026 for ap-northeast-2
+  type        = string
+  description = "The AMI ID used to provision Rocky Linux instances"
+  default     = "ami-01d0a514d7901594e" 
 }
 
-
-# Add this data source block to the top of your main.tf file
-data "aws_ami" "rocky9" {
-  most_recent = true
-  owners      = ["679593333241"] # The Official Verified Rocky Linux Organization Account
-
-  filter {
-    name   = "name"
-    values = ["Rocky-9-EC2-Base-9.*.x86_64*"]
-  }
-}
 
 
 variable "mgmt_instance_type" {
