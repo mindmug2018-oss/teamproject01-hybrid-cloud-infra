@@ -50,11 +50,17 @@ variable "rocky_ami_id" {
 }
 
 
-variable "ubuntu_ami_id" {
-  description = "AMI ID for Ubuntu 22.04 arm64 in ap-northeast-2."
-  type    = string
-  default = "ami-0d555a33c84ad995c"
+# Add this data source block to the top of your main.tf file
+data "aws_ami" "rocky9" {
+  most_recent = true
+  owners      = ["679593333241"] # The Official Verified Rocky Linux Organization Account
+
+  filter {
+    name   = "name"
+    values = ["Rocky-9-EC2-Base-9.*.x86_64*"]
+  }
 }
+
 
 variable "mgmt_instance_type" {
   type    = string
