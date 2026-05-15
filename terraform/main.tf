@@ -352,7 +352,7 @@ resource "aws_instance" "mgmt" {
     systemctl enable --now tailscaled
     sleep 5
     tailscale up \
-      --authkey ${var.tailscale_auth_key} \
+      --authkey "${var.tailscale_auth_key}" \
       --accept-routes \
       --accept-dns=false \
       --hostname aws-mgmt
@@ -394,7 +394,8 @@ resource "aws_instance" "rocky1" {
     systemctl enable --now tailscaled
     sleep 5
     tailscale up \
-      --authkey ${var.tailscale_auth_key} \
+      --authkey "${var.tailscale_auth_key}" \
+      --advertise-tags=tag:project1-ec2 \
       --accept-routes \
       --accept-dns=false \
       --hostname aws-rocky1
@@ -436,7 +437,8 @@ resource "aws_instance" "rocky2" {
     systemctl enable --now tailscaled
     sleep 5
     tailscale up \
-      --authkey ${var.tailscale_auth_key} \
+      --authkey "${var.tailscale_auth_key}" \
+      --advertise-tags=tag:project1-ec2 \
       --accept-routes \
       --accept-dns=false \
       --hostname aws-rocky2
@@ -467,8 +469,9 @@ resource "aws_instance" "ubuntu1" {
   user_data = <<-EOF
     #!/bin/bash
     set -e
+    export DEBIAN_FRONTEND=noninteractive
     apt-get update -y
-    apt-get install -y python3 python3-pip
+    apt-get install -y python3 python3-full
     useradd -m -s /bin/bash user1
     mkdir -p /home/user1/.ssh
     echo "${file(var.public_key_path)}" >> /home/user1/.ssh/authorized_keys
@@ -480,11 +483,12 @@ resource "aws_instance" "ubuntu1" {
     systemctl enable --now tailscaled
     sleep 5
     tailscale up \
-      --authkey ${var.tailscale_auth_key} \
+      --authkey "${var.tailscale_auth_key}" \
+      --advertise-tags=tag:project1-ec2 \
       --accept-routes \
       --accept-dns=false \
       --hostname aws-ubuntu1
-        
+
   EOF
 
   tags = merge(local.common_tags, {

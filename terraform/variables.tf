@@ -86,5 +86,4 @@ variable "tailscale_auth_key" {
   description = "Tailscale reusable auth key for EC2 instances to join the network on boot"
   type        = string
   sensitive   = true
-  default     = ""
 }
