@@ -45,10 +45,10 @@ variable "public_key_path" {
 }
 
 variable "rocky_ami_id" {
-  description = "AMI ID for Rocky Linux 9 arm64 in ap-northeast-2."
   type    = string
-  default = "ami-06cb9ab78bd10073b"
+  default = "ami-0ee85600490b4d45d" # 🌟 Official Rocky Linux 9 AS of 2026 for ap-northeast-2
 }
+
 
 variable "ubuntu_ami_id" {
   description = "AMI ID for Ubuntu 22.04 arm64 in ap-northeast-2."
