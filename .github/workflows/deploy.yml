@@ -197,7 +197,7 @@ jobs:
         with:
           oauth-client-id: ${{ secrets.TS_OAUTH_CLIENT_ID }}
           oauth-secret: ${{ secrets.TS_OAUTH_SECRET }}
-          tags: tag:ci
+          tags: tag:project1-ec2
 
       # ── Wait for EC2s to join Tailscale network ──────────────────────
       # EC2s install Tailscale via user_data on boot
