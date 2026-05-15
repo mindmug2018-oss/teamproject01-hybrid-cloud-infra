@@ -348,14 +348,19 @@ resource "aws_instance" "mgmt" {
     echo "user1 ALL=(ALL) NOPASSWD:ALL" >> /etc/sudoers.d/user1
 
     # Install and start Tailscale
-    curl -fsSL https://tailscale.com/install.sh | sh
+    curl -fsSL https://tailscale.com | sh
     systemctl enable --now tailscaled
     sleep 5
+    
+    # ⬇️ TERRAFORM AUTOMATICALLY INJECTS THE ACTIVE VPC CIDR BLOCK HERE
     tailscale up \
-      --authkey "${var.tailscale_auth_key}" \
+      --authkey="${var.tailscale_auth_key}" \
+      --advertise-tags="tag:project1-ec2" \
+      --advertise-routes="${aws_vpc.main.cidr_block}" \
+      --ephemeral \
       --accept-routes \
       --accept-dns=false \
-      --hostname aws-mgmt
+      --hostname="aws-mgmt"
   EOF
 
   tags = merge(local.common_tags, {
@@ -390,16 +395,6 @@ resource "aws_instance" "rocky1" {
     chmod 700 /home/user1/.ssh
     chmod 600 /home/user1/.ssh/authorized_keys
     echo "user1 ALL=(ALL) NOPASSWD:ALL" >> /etc/sudoers.d/user1
-    curl -fsSL https://tailscale.com/install.sh | sh
-    systemctl enable --now tailscaled
-    sleep 5
-    tailscale up \
-      --authkey "${var.tailscale_auth_key}" \
-      --advertise-tags=tag:project1-ec2 \
-      --accept-routes \
-      --accept-dns=false \
-      --hostname aws-rocky1
-
   EOF
 
   tags = merge(local.common_tags, {
@@ -433,16 +428,6 @@ resource "aws_instance" "rocky2" {
     chmod 700 /home/user1/.ssh
     chmod 600 /home/user1/.ssh/authorized_keys
     echo "user1 ALL=(ALL) NOPASSWD:ALL" >> /etc/sudoers.d/user1
-    curl -fsSL https://tailscale.com/install.sh | sh
-    systemctl enable --now tailscaled
-    sleep 5
-    tailscale up \
-      --authkey "${var.tailscale_auth_key}" \
-      --advertise-tags=tag:project1-ec2 \
-      --accept-routes \
-      --accept-dns=false \
-      --hostname aws-rocky2
-    
   EOF
 
   tags = merge(local.common_tags, {
@@ -479,16 +464,6 @@ resource "aws_instance" "ubuntu1" {
     chmod 700 /home/user1/.ssh
     chmod 600 /home/user1/.ssh/authorized_keys
     echo "user1 ALL=(ALL) NOPASSWD:ALL" >> /etc/sudoers.d/user1
-    curl -fsSL https://tailscale.com/install.sh | sh
-    systemctl enable --now tailscaled
-    sleep 5
-    tailscale up \
-      --authkey "${var.tailscale_auth_key}" \
-      --advertise-tags=tag:project1-ec2 \
-      --accept-routes \
-      --accept-dns=false \
-      --hostname aws-ubuntu1
-
   EOF
 
   tags = merge(local.common_tags, {

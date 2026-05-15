@@ -32,8 +32,9 @@
           option  httpchk
           http-check send meth GET uri /health ver HTTP/1.1 hdr Host localhost
           http-check expect status 200
-          server rocky1 {{ groups['rocky'][0] }}:8000 check inter 5s fall 3 rise 2
-          server rocky2 {{ groups['rocky'][1] }}:8000 check inter 5s fall 3 rise 2
+          {% for host in groups['rocky'] %}
+          server rocky{{ loop.index }} {{ host }}:8000 check inter 5s fall 3 rise 2
+          {% endfor %}
 
       frontend stats
           bind *:8404
