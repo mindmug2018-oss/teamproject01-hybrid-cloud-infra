@@ -51,6 +51,11 @@ variable "rocky_ami_id" {
   default     = "ami-01d0a514d7901594e" 
 }
 
+variable "ubuntu_ami_id" {
+  type        = string
+  description = "The AMI ID used to provision the Ubuntu PostgreSQL database instance"
+  default     = "ami-040c33ebdd1669460"
+}
 
 
 variable "mgmt_instance_type" {
