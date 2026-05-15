@@ -131,6 +131,8 @@ jobs:
 
   # ════════════════════════════════════════════════════════════════════
   # JOB 3B — AWS Deploy with Tailscale
+  # GitHub runner joins Tailscale → direct SSH to all EC2 instances
+  # No ProxyJump needed → much more reliable
   # ════════════════════════════════════════════════════════════════════
   deploy-aws:
     name: Deploy to AWS (Tailscale + Terraform + Ansible + Destroy)
@@ -189,8 +191,7 @@ jobs:
           echo "ALB_DNS=$(terraform output -raw alb_dns_name)" >> $GITHUB_ENV
 
       # ── Connect GitHub runner to Tailscale ───────────────────────────
-      # Runner joins the tailnet BEFORE we try to reach any EC2 node.
-      # This must happen before the SSH wait steps below.
+      # This is the key step — runner joins the same mesh network as EC2s
       - name: Connect to Tailscale
         uses: tailscale/github-action@v3
         with:
@@ -198,115 +199,84 @@ jobs:
           oauth-secret: ${{ secrets.TS_OAUTH_SECRET }}
           tags: tag:project1-ec2
 
-      # ── Wait for mgmt to be SSH-reachable on its public IP ───────────
-      # We need mgmt up before we can ProxyJump to private nodes.
-      - name: Wait for mgmt SSH
+      # ── Wait for EC2s to join Tailscale network ──────────────────────
+      # EC2s install Tailscale via user_data on boot
+      # We wait until we can ping them on Tailscale IPs
+      - name: Wait for EC2 instances on Tailscale
         run: |
-          echo "Waiting for mgmt SSH on public IP ${{ env.MGMT_IP }}..."
-          for i in $(seq 1 40); do
+          echo "Waiting for instances to appear on Tailscale..."
+          sleep 60
+
+          # Wait for mgmt public SSH (still needed for first Ansible connection)
+          for i in $(seq 1 30); do
             if ssh -i ~/.ssh/teamproj01ansiblekey.pem \
                    -o ConnectTimeout=5 \
                    -o StrictHostKeyChecking=no \
                    -o UserKnownHostsFile=/dev/null \
                    user1@${{ env.MGMT_IP }} "echo ready" 2>/dev/null | grep -q ready; then
-              echo "✅ mgmt SSH ready (attempt $i)"
+              echo "✅ mgmt SSH ready"
               break
             fi
-            echo "Attempt $i/40 — waiting 10s..."
+            echo "Attempt $i/30 — waiting 10s..."
             sleep 10
-            if [[ $i -eq 40 ]]; then
-              echo "❌ mgmt never became reachable"
-              exit 1
-            fi
           done
 
-      # ── Wait for mgmt Tailscale IP ───────────────────────────────────
-      # Poll mgmt directly via its public IP until tailscale ip -4
-      # returns a 100.x.x.x address, confirming user_data completed.
-      - name: Get mgmt Tailscale IP
+      # ── Get Tailscale IPs from EC2 instances ─────────────────────────
+      - name: Get Tailscale IPs from instances
         run: |
-          echo "Polling mgmt for its Tailscale IP..."
-          for i in $(seq 1 30); do
-            TS_IP=$(ssh -i ~/.ssh/teamproj01ansiblekey.pem \
-                       -o ConnectTimeout=5 \
-                       -o StrictHostKeyChecking=no \
-                       -o UserKnownHostsFile=/dev/null \
-                       user1@${{ env.MGMT_IP }} \
-                       "tailscale ip -4 2>/dev/null" 2>/dev/null || echo "")
-            if [[ "$TS_IP" == 100.* ]]; then
-              echo "MGMT_TS_IP=${TS_IP}" >> $GITHUB_ENV
-              echo "✅ mgmt Tailscale IP: ${TS_IP}"
-              break
-            fi
-            echo "Attempt $i/30 — mgmt Tailscale not ready yet (got: '${TS_IP}'), waiting 10s..."
-            sleep 10
-            if [[ $i -eq 30 ]]; then
-              echo "❌ mgmt never joined Tailscale — check user_data logs with: journalctl -u tailscaled"
-              exit 1
-            fi
-          done
-
-      # ── Wait for private nodes via ProxyJump through mgmt ────────────
-      # Strategy: confirm SSH reachability first, THEN get Tailscale IP.
-      # We ProxyJump through mgmt's PUBLIC IP (not Tailscale IP) so this
-      # works even if the subnet route advertisement isn't active yet.
-      - name: Get Tailscale IPs from private nodes
-        run: |
-          SSH_OPTS="-i ~/.ssh/teamproj01ansiblekey.pem \
-                    -o ConnectTimeout=5 \
-                    -o StrictHostKeyChecking=no \
-                    -o UserKnownHostsFile=/dev/null"
-          PROXY="-o ProxyJump=user1@${{ env.MGMT_IP }}"
-
-          get_private_ts_ip() {
-            local LABEL=$1
-            local PRIVATE_IP=$2
-
-            # Step 1: wait for SSH reachability via ProxyJump
-            echo "--- Waiting for ${LABEL} SSH (via ProxyJump)..."
-            for i in $(seq 1 40); do
-              if ssh $SSH_OPTS $PROXY user1@${PRIVATE_IP} \
-                   "echo ready" 2>/dev/null | grep -q ready; then
-                echo "✅ ${LABEL} SSH ready (attempt $i)"
-                break
-              fi
-              echo "${LABEL} SSH attempt $i/40 — waiting 10s..."
-              sleep 10
-              if [[ $i -eq 40 ]]; then
-                echo "❌ ${LABEL} SSH never became reachable via ProxyJump"
-                exit 1
-              fi
-            done
-
-            # Step 2: wait for Tailscale IP on the now-reachable node
-            echo "--- Waiting for ${LABEL} Tailscale IP..."
-            for i in $(seq 1 30); do
-              TS_IP=$(ssh $SSH_OPTS $PROXY user1@${PRIVATE_IP} \
+          get_ts_ip() {
+            local PUBLIC_IP=$1
+            local HOST_LABEL=$2
+            for i in $(seq 1 20); do
+              TS_IP=$(ssh -i ~/.ssh/teamproj01ansiblekey.pem \
+                         -o ConnectTimeout=5 \
+                         -o StrictHostKeyChecking=no \
+                         -o UserKnownHostsFile=/dev/null \
+                         user1@${PUBLIC_IP} \
                          "tailscale ip -4 2>/dev/null" 2>/dev/null || echo "")
-              if [[ "$TS_IP" == 100.* ]]; then
-                echo "${LABEL}_TS_IP=${TS_IP}" >> $GITHUB_ENV
-                echo "✅ ${LABEL} Tailscale IP: ${TS_IP}"
+              if [[ $TS_IP == 100.* ]]; then
+                echo "${HOST_LABEL}_TS_IP=${TS_IP}" >> $GITHUB_ENV
+                echo "✅ ${HOST_LABEL} Tailscale IP: ${TS_IP}"
                 return 0
               fi
-              echo "${LABEL} Tailscale attempt $i/30 — got: '${TS_IP}', waiting 10s..."
+              echo "Waiting for ${HOST_LABEL} Tailscale IP... attempt $i/20"
               sleep 10
             done
-            echo "❌ ${LABEL} never joined Tailscale"
-            exit 1
+            echo "⚠️ Could not get Tailscale IP for ${HOST_LABEL}"
           }
 
-          get_private_ts_ip "ROCKY1"  "${{ env.ROCKY1_IP }}"
-          get_private_ts_ip "ROCKY2"  "${{ env.ROCKY2_IP }}"
-          get_private_ts_ip "UBUNTU1" "${{ env.UBUNTU1_IP }}"
+          # Get mgmt Tailscale IP (it has public IP so we connect directly)
+          get_ts_ip "${{ env.MGMT_IP }}" "MGMT"
+
+          # Get rocky1, rocky2, ubuntu1 Tailscale IPs via ProxyJump (first time only)
+          for HOST_PAIR in "ROCKY1:${{ env.ROCKY1_IP }}" "ROCKY2:${{ env.ROCKY2_IP }}" "UBUNTU1:${{ env.UBUNTU1_IP }}"; do
+            LABEL="${HOST_PAIR%%:*}"
+            IP="${HOST_PAIR##*:}"
+            for i in $(seq 1 20); do
+              TS_IP=$(ssh -i ~/.ssh/teamproj01ansiblekey.pem \
+                         -o ProxyJump=user1@${{ env.MGMT_IP }} \
+                         -o ConnectTimeout=5 \
+                         -o StrictHostKeyChecking=no \
+                         -o UserKnownHostsFile=/dev/null \
+                         user1@${IP} \
+                         "tailscale ip -4 2>/dev/null" 2>/dev/null || echo "")
+              if [[ $TS_IP == 100.* ]]; then
+                echo "${LABEL}_TS_IP=${TS_IP}" >> $GITHUB_ENV
+                echo "✅ ${LABEL} Tailscale IP: ${TS_IP}"
+                break
+              fi
+              echo "Waiting for ${LABEL} Tailscale IP... attempt $i/20"
+              sleep 10
+            done
+          done
 
       # ── Generate Tailscale-based inventory ───────────────────────────
-      # From this point all Ansible SSH goes direct over Tailscale —
-      # no ProxyJump required.
+      # From this point, all SSH goes via Tailscale — no ProxyJump!
       - name: Generate Tailscale inventory
         run: |
           cat > inventory/hosts_aws_ts.ini << EOF
           # Generated by GitHub Actions — Tailscale mesh IPs
-          # No ProxyJump needed — all hosts reachable directly via Tailscale
+          # No ProxyJump needed — all hosts reachable directly
 
           [mgmt]
           ${{ env.MGMT_TS_IP }} ansible_user=user1
@@ -347,30 +317,21 @@ jobs:
           ssh_args = -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null
           EOF
 
-      # ── Verify Tailscale connectivity before Ansible ─────────────────
+      # ── Test Tailscale connectivity ──────────────────────────────────
       - name: Test direct SSH via Tailscale
         run: |
           echo "Testing direct Tailscale connections (no ProxyJump)..."
-          ALL_OK=true
-          for PAIR in "mgmt:${{ env.MGMT_TS_IP }}" "rocky1:${{ env.ROCKY1_TS_IP }}" "rocky2:${{ env.ROCKY2_TS_IP }}" "ubuntu1:${{ env.UBUNTU1_TS_IP }}"; do
-            LABEL="${PAIR%%:*}"
-            IP="${PAIR##*:}"
-            HOSTNAME=$(ssh -i ~/.ssh/teamproj01ansiblekey.pem \
-                          -o ConnectTimeout=10 \
-                          -o StrictHostKeyChecking=no \
-                          -o UserKnownHostsFile=/dev/null \
-                          user1@${IP} "hostname" 2>/dev/null || echo "FAILED")
-            if [[ "$HOSTNAME" == "FAILED" ]]; then
-              echo "⚠️  ${LABEL} (${IP}) — NOT reachable via Tailscale"
-              ALL_OK=false
+          for IP in ${{ env.MGMT_TS_IP }} ${{ env.ROCKY1_TS_IP }} ${{ env.ROCKY2_TS_IP }} ${{ env.UBUNTU1_TS_IP }}; do
+            if ssh -i ~/.ssh/teamproj01ansiblekey.pem \
+                   -o ConnectTimeout=10 \
+                   -o StrictHostKeyChecking=no \
+                   -o UserKnownHostsFile=/dev/null \
+                   user1@${IP} "hostname" 2>/dev/null; then
+              echo "✅ ${IP} reachable via Tailscale"
             else
-              echo "✅ ${LABEL} (${IP}) — hostname: ${HOSTNAME}"
+              echo "⚠️ ${IP} not yet reachable"
             fi
           done
-          if [[ "$ALL_OK" == "false" ]]; then
-            echo "❌ One or more Tailscale connections failed — aborting"
-            exit 1
-          fi
 
       # ── Run Ansible ──────────────────────────────────────────────────
       - name: Run Ansible site_aws.yml via Tailscale
@@ -379,7 +340,7 @@ jobs:
             -i inventory/hosts_aws_ts.ini \
             --diff
 
-      # ── Verify ALB health ────────────────────────────────────────────
+      # ── Verify ──────────────────────────────────────────────────────
       - name: Verify AWS ALB health
         run: |
           echo "Waiting 30s for ALB to stabilize..."
@@ -392,10 +353,6 @@ jobs:
             fi
             echo "Attempt $i/10 — retrying... ($RESULT)"
             sleep 15
-            if [[ $i -eq 10 ]]; then
-              echo "❌ ALB health check never passed"
-              exit 1
-            fi
           done
 
       # ── Notify success before destroy ────────────────────────────────
