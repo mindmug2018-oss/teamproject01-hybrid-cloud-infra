@@ -28,28 +28,6 @@ provider "aws" {
   region = var.aws_region
 }
 
-########################################################################
-# LOCALS
-########################################################################
-
-locals {
-  common_tags = {
-    Project     = var.project_name
-    ManagedBy   = "terraform"
-  }
-
-  # Shared Tailscale bootstrap used by ALL nodes.
-  # Installs tailscaled, waits for the daemon socket, then brings up the node.
-  # Arguments specific to each host (--hostname, --advertise-routes, etc.)
-  # are appended in each instance's user_data below.
-  tailscale_install = <<-TSEOF
-    # ── Tailscale install ──────────────────────────────────────────────
-    curl -fsSL https://tailscale.com/install.sh | sh
-    systemctl enable --now tailscaled
-    # Wait until the daemon socket is fully ready before calling tailscale up
-    until tailscale status &>/dev/null 2>&1; do sleep 2; done
-  TSEOF
-}
 
 ########################################################################
 # DATA SOURCES
