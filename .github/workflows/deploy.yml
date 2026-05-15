@@ -265,7 +265,7 @@ jobs:
         run: |
           ansible-playbook playbooks/site_aws.yml \
             -i inventory/hosts_aws.ini \
-            --ssh-common-args='-o StrictHostKeyChecking=no' \
+            --ssh-common-args="-o ProxyJump=user1@${{ env.MGMT_IP }} -o StrictHostKeyChecking=no" \
             --extra-vars "slack_webhook_url=${{ secrets.SLACK_WEBHOOK_URL }}" \
             --diff
         env:
