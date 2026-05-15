@@ -334,8 +334,11 @@ resource "aws_instance" "mgmt" {
   # Bootstrap: install Python3 so Ansible can connect immediately
   user_data = <<-EOF
     #!/bin/bash
+    set -e
+    # Install Python for Ansible
     dnf install -y python3 python3-pip
-    # Create the same user as on-prem so Ansible inventory works unchanged
+    
+    # Create user1
     useradd -m -s /bin/bash user1
     mkdir -p /home/user1/.ssh
     echo "${file(var.public_key_path)}" >> /home/user1/.ssh/authorized_keys
@@ -343,6 +346,16 @@ resource "aws_instance" "mgmt" {
     chmod 700 /home/user1/.ssh
     chmod 600 /home/user1/.ssh/authorized_keys
     echo "user1 ALL=(ALL) NOPASSWD:ALL" >> /etc/sudoers.d/user1
+
+    # Install and start Tailscale
+    curl -fsSL https://tailscale.com/install.sh | sh
+    systemctl enable --now tailscaled
+    sleep 5
+    tailscale up \
+      --authkey ${var.tailscale_auth_key} \
+      --accept-routes \
+      --accept-dns=false \
+      --hostname aws-mgmt
   EOF
 
   tags = merge(local.common_tags, {
@@ -368,6 +381,7 @@ resource "aws_instance" "rocky1" {
 
   user_data = <<-EOF
     #!/bin/bash
+    set -e
     dnf install -y python3 python3-pip
     useradd -m -s /bin/bash user1
     mkdir -p /home/user1/.ssh
@@ -376,6 +390,15 @@ resource "aws_instance" "rocky1" {
     chmod 700 /home/user1/.ssh
     chmod 600 /home/user1/.ssh/authorized_keys
     echo "user1 ALL=(ALL) NOPASSWD:ALL" >> /etc/sudoers.d/user1
+    curl -fsSL https://tailscale.com/install.sh | sh
+    systemctl enable --now tailscaled
+    sleep 5
+    tailscale up \
+      --authkey ${var.tailscale_auth_key} \
+      --accept-routes \
+      --accept-dns=false \
+      --hostname aws-rocky1
+
   EOF
 
   tags = merge(local.common_tags, {
@@ -400,6 +423,7 @@ resource "aws_instance" "rocky2" {
 
   user_data = <<-EOF
     #!/bin/bash
+    set -e
     dnf install -y python3 python3-pip
     useradd -m -s /bin/bash user1
     mkdir -p /home/user1/.ssh
@@ -408,6 +432,15 @@ resource "aws_instance" "rocky2" {
     chmod 700 /home/user1/.ssh
     chmod 600 /home/user1/.ssh/authorized_keys
     echo "user1 ALL=(ALL) NOPASSWD:ALL" >> /etc/sudoers.d/user1
+    curl -fsSL https://tailscale.com/install.sh | sh
+    systemctl enable --now tailscaled
+    sleep 5
+    tailscale up \
+      --authkey ${var.tailscale_auth_key} \
+      --accept-routes \
+      --accept-dns=false \
+      --hostname aws-rocky2
+    
   EOF
 
   tags = merge(local.common_tags, {
@@ -433,6 +466,7 @@ resource "aws_instance" "ubuntu1" {
 
   user_data = <<-EOF
     #!/bin/bash
+    set -e
     apt-get update -y
     apt-get install -y python3 python3-pip
     useradd -m -s /bin/bash user1
@@ -442,6 +476,15 @@ resource "aws_instance" "ubuntu1" {
     chmod 700 /home/user1/.ssh
     chmod 600 /home/user1/.ssh/authorized_keys
     echo "user1 ALL=(ALL) NOPASSWD:ALL" >> /etc/sudoers.d/user1
+    curl -fsSL https://tailscale.com/install.sh | sh
+    systemctl enable --now tailscaled
+    sleep 5
+    tailscale up \
+      --authkey ${var.tailscale_auth_key} \
+      --accept-routes \
+      --accept-dns=false \
+      --hostname aws-ubuntu1
+        
   EOF
 
   tags = merge(local.common_tags, {

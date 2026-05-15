@@ -1,0 +1,78 @@
+---
+# roles/tailscale/tasks/main.yml
+# Installs Tailscale and joins the mesh network
+# Works on both Rocky Linux (RedHat) and Ubuntu (Debian)
+# After this runs, every server gets a stable 100.x.x.x IP
+# reachable from GitHub Actions runner without ProxyJump
+
+# ── Install ────────────────────────────────────────────────────────────
+- name: Install Tailscale (Rocky / RedHat)
+  shell: |
+    curl -fsSL https://tailscale.com/install.sh | sh
+  args:
+    creates: /usr/bin/tailscale
+  become: yes
+  when: ansible_os_family == "RedHat"
+
+- name: Install Tailscale (Ubuntu / Debian)
+  shell: |
+    curl -fsSL https://tailscale.com/install.sh | sh
+  args:
+    creates: /usr/bin/tailscale
+  become: yes
+  when: ansible_os_family == "Debian"
+
+# ── Enable IP forwarding (needed for Tailscale subnet routing) ─────────
+- name: Enable IP forwarding
+  sysctl:
+    name: "{{ item }}"
+    value: "1"
+    state: present
+    sysctl_set: yes
+    reload: yes
+  loop:
+    - net.ipv4.ip_forward
+    - net.ipv6.conf.all.forwarding
+  become: yes
+  ignore_errors: yes
+
+# ── Start tailscaled service ───────────────────────────────────────────
+- name: Start and enable tailscaled
+  systemd:
+    name: tailscaled
+    state: started
+    enabled: yes
+    daemon_reload: yes
+  become: yes
+
+# ── Join the Tailscale network ─────────────────────────────────────────
+- name: Check if already connected to Tailscale
+  command: tailscale status
+  register: ts_status
+  changed_when: false
+  ignore_errors: yes
+  become: yes
+
+- name: Join Tailscale network with auth key
+  command: >
+    tailscale up
+    --authkey {{ tailscale_auth_key }}
+    --accept-routes
+    --accept-dns=false
+    --hostname {{ tailscale_hostname | default(inventory_hostname) }}
+  become: yes
+  when: ts_status.rc != 0 or 'Logged out' in ts_status.stdout
+  no_log: true
+
+# ── Get Tailscale IP for reference ────────────────────────────────────
+- name: Get Tailscale IP
+  command: tailscale ip -4
+  register: ts_ip
+  changed_when: false
+  become: yes
+  ignore_errors: yes
+
+- name: Show Tailscale IP
+  debug:
+    msg: "Tailscale IP for {{ inventory_hostname }}: {{ ts_ip.stdout }}"
+  when: ts_ip.rc == 0

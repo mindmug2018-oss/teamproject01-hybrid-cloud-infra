@@ -1,0 +1,8 @@
+---
+# roles/tailscale/handlers/main.yml
+
+- name: restart tailscaled
+  systemd:
+    name: tailscaled
+    state: restarted
+  become: yes

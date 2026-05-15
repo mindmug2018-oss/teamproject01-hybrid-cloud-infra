@@ -1,31 +1,34 @@
 ---
-# playbooks/site_aws.yml
-# AWS EC2 deployment — identical to site.yml but uses Docker monitoring stack
+# playbooks/site_aws_tailscale.yml
+# AWS deployment using Tailscale mesh network
+#
+# Flow:
+#   1. Install Tailscale on all instances (via ProxyJump - first time only)
+#   2. After Tailscale is up, all remaining plays use direct Tailscale IPs
+#      (no more ProxyJump needed from GitHub Actions runner)
 #
 # Usage:
-#   ansible-playbook playbooks/site_aws.yml -i inventory/hosts_aws.ini
-#
-# Differences from site.yml:
-#   - monitoring-docker.yml instead of monitoring.yml
-#   - prometheus.yml uses alertmanager:9093 (Docker network hostname)
+#   ansible-playbook playbooks/site_aws_tailscale.yml \
+#     -i inventory/hosts_aws_ts.ini \
+#     -e tailscale_auth_key=tskey-auth-xxxxx
 
-# 1. Infrastructure Layer
-- import_playbook: docker_install.yml      # Docker engine on all nodes
-- import_playbook: db.yml                  # PostgreSQL on ubuntu1
-- import_playbook: mgmt.yml                # HAProxy on mgmt
+# ── Phase 1: Bootstrap Tailscale on all instances ─────────────────────
+# This still needs ProxyJump for the first connection
+- name: Install Tailscale on all servers
+  hosts: all
+  become: yes
+  roles:
+    - tailscale
 
-# 2. Application Layer
-- import_playbook: docker_web.yml          # FastAPI Docker + Nginx on rocky1/rocky2
-
-# 3. Operations & Self-Healing
+# ── Phase 2: Full deployment (now via Tailscale mesh) ─────────────────
+- import_playbook: docker_install.yml
+- import_playbook: db.yml
+- import_playbook: mgmt.yml
+- import_playbook: docker_web.yml
 - import_playbook: nginx_selfheal.yml
-- import_playbook: monitoring-docker.yml   # Prometheus + Grafana + Alertmanager as Docker
-- import_playbook: prometheus_bot.yml      # Telegram bridge
-- import_playbook: prometheus_connect_docker.yml  # Pipeline validation
-- import_playbook: recovery_service.yml    # Webhook auto-recovery
-
-# 4. External Access & Security
-- import_playbook: certbot.yml             # HTTPS/SSL
-
-# 5. Final Notification
+- import_playbook: monitoring-docker.yml
+- import_playbook: prometheus_bot.yml
+- import_playbook: prometheus_connect_docker.yml
+- import_playbook: recovery_service.yml
+- import_playbook: certbot.yml
 - import_playbook: notify.yml

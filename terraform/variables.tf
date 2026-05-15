@@ -1,20 +1,18 @@
 ########################################################################
-# variables.tf
+# variables.tf — updated with Tailscale auth key
 ########################################################################
 
 variable "aws_region" {
   description = "AWS region. ap-northeast-2 = Seoul."
-  type        = string
-  default     = "ap-northeast-2"
+  type    = string
+  default = "ap-northeast-2"
 }
 
 variable "project_name" {
   description = "Prefix for all resource names and tags."
-  type        = string
-  default     = "teamproject01"
+  type    = string
+  default = "teamproject01"
 }
-
-# ── Network ────────────────────────────────────────────────────────────
 
 variable "vpc_cidr" {
   description = "CIDR block for the VPC."
@@ -36,33 +34,27 @@ variable "private_subnet_cidrs" {
 
 variable "admin_cidr" {
   description = "Your admin IP in CIDR notation. Set to your real IP before applying."
-  type        = string
-  default     = "0.0.0.0/0"
+  type    = string
+  default = "0.0.0.0/0"
 }
-
-# ── SSH Key ────────────────────────────────────────────────────────────
 
 variable "public_key_path" {
   description = "Path to SSH public key (.pub) for EC2 key pair."
-  type        = string
-  default     = "~/.ssh/teamproj01ansiblekey.pub"
+  type    = string
+  default = "~/.ssh/teamproj01ansiblekey.pub"
 }
-
-# ── AMI IDs (ap-northeast-2 arm64) ───────────────────────────────────
 
 variable "rocky_ami_id" {
   description = "AMI ID for Rocky Linux 9 arm64 in ap-northeast-2."
-  type        = string
-  default     = "ami-06cb9ab78bd10073b"
+  type    = string
+  default = "ami-06cb9ab78bd10073b"
 }
 
 variable "ubuntu_ami_id" {
   description = "AMI ID for Ubuntu 22.04 arm64 in ap-northeast-2."
-  type        = string
-  default     = "ami-0d555a33c84ad995c"
+  type    = string
+  default = "ami-0d555a33c84ad995c"
 }
-
-# ── Instance Types ─────────────────────────────────────────────────────
 
 variable "mgmt_instance_type" {
   type    = string
@@ -79,11 +71,20 @@ variable "db_instance_type" {
   default = "t4g.small"
 }
 
-# ── CloudWatch / SNS ──────────────────────────────────────────────────
-# NEW: used by cloudwatch.tf to send alarm notifications to Slack
-
 variable "slack_webhook_url" {
   description = "Slack incoming webhook URL for CloudWatch SNS notifications."
+  type      = string
+  sensitive = true
+}
+
+# ── NEW: Tailscale ────────────────────────────────────────────────────
+# Get auth key from: https://login.tailscale.com/admin/settings/keys
+# Create a reusable key (not one-time) tagged with tag:project1-ec2
+# Set via GitHub secret TS_AUTH_KEY, passed as -var at apply time
+
+variable "tailscale_auth_key" {
+  description = "Tailscale reusable auth key for EC2 instances to join the network on boot"
   type        = string
   sensitive   = true
+  default     = ""
 }
