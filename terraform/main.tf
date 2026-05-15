@@ -339,7 +339,7 @@ resource "aws_instance" "mgmt" {
     delete_on_termination = true
   }
 
-  user_data = <<-EOF
+  user_data = <<-"EOF"
     #!/bin/bash
     set -e
 
