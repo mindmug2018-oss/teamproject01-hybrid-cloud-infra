@@ -339,40 +339,12 @@ resource "aws_instance" "mgmt" {
     delete_on_termination = true
   }
 
-  user_data = <<-"EOF"
-    #!/bin/bash
-    set -e
-
-    # ── Python (required for Ansible) ─────────────────────────────────
-    dnf install -y python3 python3-pip
-
-    # ── user1 ─────────────────────────────────────────────────────────
-    useradd -m -s /bin/bash user1
-    mkdir -p /home/user1/.ssh
-    echo "${file(var.public_key_path)}" >> /home/user1/.ssh/authorized_keys
-    chown -R user1:user1 /home/user1/.ssh
-    chmod 700 /home/user1/.ssh
-    chmod 600 /home/user1/.ssh/authorized_keys
-    echo "user1 ALL=(ALL) NOPASSWD:ALL" >> /etc/sudoers.d/user1
-
-    # ── Tailscale ─────────────────────────────────────────────────────
-    # FIX: use the correct installer URL (not the homepage)
-    curl -fsSL https://tailscale.com/install.sh | sh
-    systemctl enable --now tailscaled
-
-    # FIX: wait until daemon socket is ready instead of a blind sleep
-    until tailscale status &>/dev/null 2>&1; do sleep 2; done
-
-    tailscale up \
-      --authkey="${var.tailscale_auth_key}" \
-      --advertise-tags="tag:project1-ec2" \
-      --advertise-routes="${aws_vpc.main.cidr_block}" \
-      --accept-routes \
-      --accept-dns=false \
-      --hostname="aws-mgmt"
-    # NOTE: --ephemeral intentionally omitted so mgmt stays registered
-    #       as a persistent subnet router.
-  EOF
+  # ⬇️ THE ONLY CHANGED PORTION: CLEANLY DELEGATED TO THE EXTERNAL SCRIPT
+  user_data = templatefile("${path.module}/mgmt_bootstrap.sh", {
+    PUBLIC_KEY_CONTENT = file(var.public_key_path)
+    TS_AUTH_KEY        = var.tailscale_auth_key
+    VPC_CIDR_BLOCK     = aws_vpc.main.cidr_block
+  })
 
   tags = merge(local.common_tags, {
     Name = "${var.project_name}-mgmt"
