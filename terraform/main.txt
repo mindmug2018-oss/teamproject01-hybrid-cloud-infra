@@ -29,29 +29,6 @@ provider "aws" {
 }
 
 ########################################################################
-# LOCALS
-########################################################################
-
-locals {
-  common_tags = {
-    Project     = var.project_name
-    ManagedBy   = "terraform"
-  }
-
-  # Shared Tailscale bootstrap used by ALL nodes.
-  # Installs tailscaled, waits for the daemon socket, then brings up the node.
-  # Arguments specific to each host (--hostname, --advertise-routes, etc.)
-  # are appended in each instance's user_data below.
-  tailscale_install = <<-TSEOF
-    # ── Tailscale install ──────────────────────────────────────────────
-    curl -fsSL https://tailscale.com/install.sh | sh
-    systemctl enable --now tailscaled
-    # Wait until the daemon socket is fully ready before calling tailscale up
-    until tailscale status &>/dev/null 2>&1; do sleep 2; done
-  TSEOF
-}
-
-########################################################################
 # DATA SOURCES
 ########################################################################
 
@@ -338,15 +315,8 @@ resource "aws_key_pair" "ansible" {
 # EC2 INSTANCES
 ########################################################################
 
-# ── mgmt ──────────────────────────────────────────────────────────────
-# Public subnet, Rocky Linux.
-# Runs: HAProxy, Ansible control node, Prometheus, Grafana, AlertManager.
-#
-# Tailscale notes:
-#   • NOT ephemeral — this node must stay registered as the subnet router.
-#   • --advertise-routes exposes the entire VPC CIDR to the tailnet so the
-#     GitHub Actions runner (or your laptop) can reach private instances.
-#   • --accept-routes lets mgmt reach on-prem nodes via their Tailscale IPs.
+# mgmt — public subnet, Rocky Linux
+# Runs: HAProxy (load balancer), Ansible control node, Prometheus, Grafana, AlertManager
 resource "aws_instance" "mgmt" {
   ami                         = var.rocky_ami_id
   instance_type               = var.mgmt_instance_type
@@ -361,14 +331,14 @@ resource "aws_instance" "mgmt" {
     delete_on_termination = true
   }
 
+  # Bootstrap: install Python3 so Ansible can connect immediately
   user_data = <<-EOF
     #!/bin/bash
     set -e
-
-    # ── Python (required for Ansible) ─────────────────────────────────
+    # Install Python for Ansible
     dnf install -y python3 python3-pip
-
-    # ── user1 ─────────────────────────────────────────────────────────
+    
+    # Create user1
     useradd -m -s /bin/bash user1
     mkdir -p /home/user1/.ssh
     echo "${file(var.public_key_path)}" >> /home/user1/.ssh/authorized_keys
@@ -377,23 +347,20 @@ resource "aws_instance" "mgmt" {
     chmod 600 /home/user1/.ssh/authorized_keys
     echo "user1 ALL=(ALL) NOPASSWD:ALL" >> /etc/sudoers.d/user1
 
-    # ── Tailscale ─────────────────────────────────────────────────────
-    # FIX: use the correct installer URL (not the homepage)
-    curl -fsSL https://tailscale.com/install.sh | sh
+    # Install and start Tailscale
+    curl -fsSL https://tailscale.com | sh
     systemctl enable --now tailscaled
-
-    # FIX: wait until daemon socket is ready instead of a blind sleep
-    until tailscale status &>/dev/null 2>&1; do sleep 2; done
-
+    sleep 5
+    
+    # ⬇️ TERRAFORM AUTOMATICALLY INJECTS THE ACTIVE VPC CIDR BLOCK HERE
     tailscale up \
       --authkey="${var.tailscale_auth_key}" \
       --advertise-tags="tag:project1-ec2" \
       --advertise-routes="${aws_vpc.main.cidr_block}" \
+      --ephemeral \
       --accept-routes \
       --accept-dns=false \
       --hostname="aws-mgmt"
-    # NOTE: --ephemeral intentionally omitted so mgmt stays registered
-    #       as a persistent subnet router.
   EOF
 
   tags = merge(local.common_tags, {
@@ -402,14 +369,8 @@ resource "aws_instance" "mgmt" {
   })
 }
 
-# ── rocky1 ────────────────────────────────────────────────────────────
-# Private subnet, Rocky Linux.
-# Runs: FastAPI (Docker container), Nginx (host systemd).
-#
-# Tailscale notes:
-#   • Ephemeral is fine here — app nodes don't need a persistent identity.
-#   • No --advertise-routes needed; mgmt handles subnet routing.
-#   • --accept-routes lets it reach the tailnet (on-prem nodes, mgmt).
+# rocky1 — private subnet, Rocky Linux
+# Runs: FastAPI (Docker container), Nginx (host systemd)
 resource "aws_instance" "rocky1" {
   ami                    = var.rocky_ami_id
   instance_type          = var.app_instance_type
@@ -426,11 +387,7 @@ resource "aws_instance" "rocky1" {
   user_data = <<-EOF
     #!/bin/bash
     set -e
-
-    # ── Python ────────────────────────────────────────────────────────
     dnf install -y python3 python3-pip
-
-    # ── user1 ─────────────────────────────────────────────────────────
     useradd -m -s /bin/bash user1
     mkdir -p /home/user1/.ssh
     echo "${file(var.public_key_path)}" >> /home/user1/.ssh/authorized_keys
@@ -438,19 +395,6 @@ resource "aws_instance" "rocky1" {
     chmod 700 /home/user1/.ssh
     chmod 600 /home/user1/.ssh/authorized_keys
     echo "user1 ALL=(ALL) NOPASSWD:ALL" >> /etc/sudoers.d/user1
-
-    # ── Tailscale ─────────────────────────────────────────────────────
-    curl -fsSL https://tailscale.com/install.sh | sh
-    systemctl enable --now tailscaled
-    until tailscale status &>/dev/null 2>&1; do sleep 2; done
-
-    tailscale up \
-      --authkey="${var.tailscale_auth_key}" \
-      --advertise-tags="tag:project1-ec2" \
-      --ephemeral \
-      --accept-routes \
-      --accept-dns=false \
-      --hostname="aws-rocky1"
   EOF
 
   tags = merge(local.common_tags, {
@@ -459,8 +403,7 @@ resource "aws_instance" "rocky1" {
   })
 }
 
-# ── rocky2 ────────────────────────────────────────────────────────────
-# Private subnet, Rocky Linux (identical to rocky1 for HA).
+# rocky2 — private subnet, Rocky Linux (identical to rocky1 for HA)
 resource "aws_instance" "rocky2" {
   ami                    = var.rocky_ami_id
   instance_type          = var.app_instance_type
@@ -477,11 +420,7 @@ resource "aws_instance" "rocky2" {
   user_data = <<-EOF
     #!/bin/bash
     set -e
-
-    # ── Python ────────────────────────────────────────────────────────
     dnf install -y python3 python3-pip
-
-    # ── user1 ─────────────────────────────────────────────────────────
     useradd -m -s /bin/bash user1
     mkdir -p /home/user1/.ssh
     echo "${file(var.public_key_path)}" >> /home/user1/.ssh/authorized_keys
@@ -489,19 +428,6 @@ resource "aws_instance" "rocky2" {
     chmod 700 /home/user1/.ssh
     chmod 600 /home/user1/.ssh/authorized_keys
     echo "user1 ALL=(ALL) NOPASSWD:ALL" >> /etc/sudoers.d/user1
-
-    # ── Tailscale ─────────────────────────────────────────────────────
-    curl -fsSL https://tailscale.com/install.sh | sh
-    systemctl enable --now tailscaled
-    until tailscale status &>/dev/null 2>&1; do sleep 2; done
-
-    tailscale up \
-      --authkey="${var.tailscale_auth_key}" \
-      --advertise-tags="tag:project1-ec2" \
-      --ephemeral \
-      --accept-routes \
-      --accept-dns=false \
-      --hostname="aws-rocky2"
   EOF
 
   tags = merge(local.common_tags, {
@@ -510,13 +436,8 @@ resource "aws_instance" "rocky2" {
   })
 }
 
-# ── ubuntu1 ───────────────────────────────────────────────────────────
-# Private subnet, Ubuntu.
-# Runs: PostgreSQL 17.
-#
-# Tailscale notes:
-#   • Uses apt-based installer (same curl | sh script works on Ubuntu).
-#   • Ephemeral is acceptable; Ansible connects via Tailscale IP from mgmt.
+# ubuntu1 — private subnet, Ubuntu
+# Runs: PostgreSQL 17
 resource "aws_instance" "ubuntu1" {
   ami                    = var.ubuntu_ami_id
   instance_type          = var.db_instance_type
@@ -534,12 +455,8 @@ resource "aws_instance" "ubuntu1" {
     #!/bin/bash
     set -e
     export DEBIAN_FRONTEND=noninteractive
-
-    # ── Python ────────────────────────────────────────────────────────
     apt-get update -y
     apt-get install -y python3 python3-full
-
-    # ── user1 ─────────────────────────────────────────────────────────
     useradd -m -s /bin/bash user1
     mkdir -p /home/user1/.ssh
     echo "${file(var.public_key_path)}" >> /home/user1/.ssh/authorized_keys
@@ -547,19 +464,6 @@ resource "aws_instance" "ubuntu1" {
     chmod 700 /home/user1/.ssh
     chmod 600 /home/user1/.ssh/authorized_keys
     echo "user1 ALL=(ALL) NOPASSWD:ALL" >> /etc/sudoers.d/user1
-
-    # ── Tailscale ─────────────────────────────────────────────────────
-    curl -fsSL https://tailscale.com/install.sh | sh
-    systemctl enable --now tailscaled
-    until tailscale status &>/dev/null 2>&1; do sleep 2; done
-
-    tailscale up \
-      --authkey="${var.tailscale_auth_key}" \
-      --advertise-tags="tag:project1-ec2" \
-      --ephemeral \
-      --accept-routes \
-      --accept-dns=false \
-      --hostname="aws-ubuntu1"
   EOF
 
   tags = merge(local.common_tags, {
@@ -571,7 +475,7 @@ resource "aws_instance" "ubuntu1" {
 ########################################################################
 # APPLICATION LOAD BALANCER
 # Replaces on-prem HAProxy for external traffic (HAProxy still used
-# for internal health-check routing on the mgmt node).
+# for internal health-check routing on the mgmt node)
 ########################################################################
 
 resource "aws_lb" "alb" {
