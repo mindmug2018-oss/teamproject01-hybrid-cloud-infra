@@ -44,31 +44,6 @@ variable "public_key_path" {
   default = "~/.ssh/teamproj01ansiblekey.pub"
 }
 
-
-# Automatically finds the newest, valid official Rocky Linux 9 image
-data "aws_ami" "official_rocky9" {
-  most_recent = true
-  owners      = ["679593333241"] # Official Rocky Linux AWS account
-
-  filter {
-    name   = "name"
-    values = ["Rocky-9-EC2-Base-9.*.x86_64*"]
-  }
-}
-
-# Automatically finds the newest, valid official Ubuntu 24.04 image
-data "aws_ami" "official_ubuntu24" {
-  most_recent = true
-  owners      = ["099720109477"] # Official Canonical (Ubuntu) AWS account
-
-  filter {
-    name   = "name"
-    values = ["ubuntu/images/hvm-ssd-gp3/ubuntu-noble-24.04-amd64-server-*"]
-  }
-}
-
-
-
 variable "mgmt_instance_type" {
   type    = string
   default = "t4g.small"
