@@ -192,6 +192,31 @@ jobs:
           echo "UBUNTU1_IP=$(terraform output -raw ubuntu1_private_ip)" >> $GITHUB_ENV
           echo "ALB_DNS=$(terraform output -raw alb_dns_name)" >> $GITHUB_ENV
 
+      - name: DIAGNOSTIC — what's actually happening on rocky1
+        run: |
+          set +e
+          echo "=== Wait 90s for all bootstraps to finish ==="
+          sleep 90
+
+          echo ""
+          echo "=== TEST 1: Can the runner SSH to mgmt? ==="
+          ssh -v -i ~/.ssh/teamproj01ansiblekey.pem \
+              -o ConnectTimeout=10 \
+              -o StrictHostKeyChecking=no \
+              -o UserKnownHostsFile=/dev/null \
+              user1@${{ env.MGMT_IP }} \
+              "echo MGMT_OK; whoami; hostname; tailscale status | head -5" 2>&1 | tail -40
+
+          echo ""
+          echo "=== TEST 2: Can mgmt SSH to rocky1 (the ProxyJump path)? ==="
+          ssh -v -i ~/.ssh/teamproj01ansiblekey.pem \
+              -o ProxyJump=user1@${{ env.MGMT_IP }} \
+              -o ConnectTimeout=10 \
+              -o StrictHostKeyChecking=no \
+              -o UserKnownHostsFile=/dev/null \
+              user1@${{ env.ROCKY1_IP }} \
+              "echo ROCKY1_OK; whoami; hostname; which tailscale; systemctl is-active tailscaled; sudo tailscale status; sudo tail -40 /var/log/bootstrap.log" 2>&1 | tail -80
+
       # ── Connect GitHub runner to Tailscale ───────────────────────────
       - name: Connect GitHub runner to Tailscale
         uses: tailscale/github-action@v3
@@ -236,7 +261,7 @@ jobs:
                           -o StrictHostKeyChecking=no \
                           -o UserKnownHostsFile=/dev/null \
                           user1@${IP} \
-                          "tailscale ip -4 2>/dev/null" 2>/dev/null || echo "")
+                          "tailscale ip -4" 2>&1)
               if [[ "$TS_IP" == 100.* ]]; then
                 echo "${LABEL}_TS=${TS_IP}" >> $GITHUB_ENV
                 echo "✅ ${LABEL} Tailscale IP: ${TS_IP}"
@@ -260,7 +285,7 @@ jobs:
                           -o StrictHostKeyChecking=no \
                           -o UserKnownHostsFile=/dev/null \
                           user1@${PRIVATE_IP} \
-                          "tailscale ip -4 2>/dev/null" 2>/dev/null || echo "")
+                          "tailscale ip -4" 2>&1)
               if [[ "$TS_IP" == 100.* ]]; then
                 echo "${LABEL}_TS=${TS_IP}" >> $GITHUB_ENV
                 echo "✅ ${LABEL} Tailscale IP: ${TS_IP}"
