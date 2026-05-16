@@ -33,11 +33,11 @@ until tailscale status &>/dev/null 2>&1; do
 done
 
 # ── 5. Network Authentication ─────────────────────────────────────────
-# ⚠️ RE-ADDED THE ADVERTISE TAGS THAT SUCCESSFULY AUTHENTICATED MANUALLY
+# Join the Tailscale network as a Subnet Router
 tailscale up \
   --authkey="${TS_AUTH_KEY}" \
   --advertise-tags="tag:project1-ec2" \
-  --advertise-routes="${VPC_CIDR_BLOCK}" \
+  --advertise-routes="${VPC_CIDR_BLOCK}" \ # 👈 BROADCASTS THE PRIVATE SUBNETS
   --accept-routes \
   --accept-dns=false \
   --hostname="aws-mgmt"
