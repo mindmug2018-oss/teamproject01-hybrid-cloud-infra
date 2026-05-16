@@ -31,38 +31,38 @@ provider "aws" {
 # 🌟 DYNAMIC LOOKUP FOR OFFICIAL ROCKY LINUX 9 (ARM64)
 data "aws_ami" "official_rocky9" {
   most_recent = true
-  owners      = ["679593333241"] 
+  # ⬇️ FIX: Changed to Rocky Linux Community Org ID to bypass Marketplace subscription blocks
+  owners      = ["792107900819"] 
 
   filter {
     name   = "name"
-    # ⬇️ CHANGED FILTER TO LOOK FOR THE OFFICIAL ARM64 BUILD TYPE
+    # ⬇️ FIX: Captures both raw builds and UUID-appended community names cleanly
     values = ["Rocky-9-EC2-Base-9.*.aarch64*"] 
   }
 
   filter {
     name   = "architecture"
-    # ⬇️ MATCHES YOUR ARM64 EC2 INSTANCE HARDWARE
     values = ["arm64"] 
   }
 }
 
 # 🌟 DYNAMIC LOOKUP FOR OFFICIAL UBUNTU 24.04 (ARM64)
+# This block is 100% correct and perfectly targets Canonical's official releases.
 data "aws_ami" "official_ubuntu24" {
   most_recent = true
-  owners      = ["099720109477"] 
+  owners      = ["099720109477"] # Canonical Official Owner ID
 
   filter {
     name   = "name"
-    # ⬇️ CHANGED PATTERN TO EXTRACT THE OFFICIAL ARM64 BUILD REGISTRY
     values = ["ubuntu/images/hvm-ssd-gp3/ubuntu-noble-24.04-arm64-server-*"]
   }
 
   filter {
     name   = "architecture"
-    # ⬇️ MATCHES YOUR ARM64 EC2 INSTANCE HARDWARE
     values = ["arm64"] 
   }
 }
+
 
 ########################################################################
 # DATA SOURCES
