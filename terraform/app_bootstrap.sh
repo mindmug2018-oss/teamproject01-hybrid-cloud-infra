@@ -15,9 +15,10 @@ if [ "$OS_TYPE" = "ubuntu" ]; then
     apt-get install -y python3 python3-minimal
 else
     # Rocky/RHEL handling
-    dnf clean all
-    dnf makecache
-    dnf install -y python3 python3-pip
+    for i in {1..5}; do
+        dnf clean all
+        dnf makecache && dnf install -y python3 python3-pip && break || sleep 5
+    done
 fi
 
 # ── 2. User Setup ─────────────────────────────────────────────────────

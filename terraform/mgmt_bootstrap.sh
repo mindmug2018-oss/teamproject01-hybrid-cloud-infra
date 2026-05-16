@@ -10,10 +10,9 @@ echo "max_parallel_downloads=10" >> /etc/dnf/dnf.conf
 echo "fastestmirror=True" >> /etc/dnf/dnf.conf
 
 for i in {1..5}; do
-  echo "Attempting package sync... (Attempt $i)"
   dnf clean all
-  timeout 30 dnf makecache --refresh || continue
-  dnf install -y python3 python3-pip && break || sleep 5
+  dnf makecache && dnf install -y python3 python3-pip && break
+  sleep 5
 done
 
 # ── 2. User Setup ─────────────────────────────────────────────────────
@@ -39,7 +38,7 @@ echo "net.ipv6.conf.all.forwarding = 1" >> /etc/sysctl.d/99-tailscale.conf
 sysctl --system || true
 
 # ── 4. Tailscale Installation ─────────────────────────────────────────
-curl -fsSL https://tailscale.com | sh || true
+curl -fsSL https://tailscale.com/install.sh | sh
 
 systemctl daemon-reload || true
 systemctl enable --now tailscaled || true
