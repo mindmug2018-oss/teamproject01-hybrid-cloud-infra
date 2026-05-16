@@ -45,16 +45,17 @@ data "aws_ami" "official_rocky9" {
 
 data "aws_ami" "official_ubuntu24" {
   most_recent = true
-  owners      = ["099720109477"] # Canonical (Ubuntu) AWS Account
+  owners      = ["099720109477"] # Official Canonical (Ubuntu) AWS Account ID
 
   filter {
     name   = "name"
-    values = ["ubuntu/images/hvm-ssd-gp3/ubuntu-noble-24.04-amd64-server-*"]
+    # ⬇️ CHANGED VALUE PATTERN FOR BROAD REGIONAL ROBUSTNESS
+    values = ["ubuntu/images/hvm-ssd/ubuntu-noble-24.04-amd64-server-*"]
   }
 
   filter {
     name   = "architecture"
-    values = ["amd64"]
+    values = ["x86_64"]
   }
 }
 

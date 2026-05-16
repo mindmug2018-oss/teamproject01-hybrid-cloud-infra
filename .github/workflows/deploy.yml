@@ -375,8 +375,7 @@ jobs:
             -var="public_key_path=$HOME/.ssh/teamproj01ansiblekey.pub" \
             -var="admin_cidr=0.0.0.0/0" \
             -var="tailscale_auth_key=${{ secrets.TS_AUTH_KEY }}" \
-            -var="rocky_ami_id=${{ env.ROCKY_AMI }}" \
-            -var="ubuntu_ami_id=${{ env.UBUNTU_AMI }}" || true
+            -var="slack_webhook_url=${{ secrets.SLACK_WEBHOOK_URL }}"
           echo "=== Destroy complete: $(date) ==="
 
       - name: Notify destroy complete
