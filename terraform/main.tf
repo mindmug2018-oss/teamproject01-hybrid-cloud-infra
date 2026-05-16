@@ -409,13 +409,6 @@ resource "aws_instance" "mgmt" {
 }
 
 # ── rocky1 ────────────────────────────────────────────────────────────
-# Private subnet, Rocky Linux.
-# Runs: FastAPI (Docker container), Nginx (host systemd).
-#
-# Tailscale notes:
-#   • Ephemeral is fine here — app nodes don't need a persistent identity.
-#   • No --advertise-routes needed; mgmt handles subnet routing.
-#   • --accept-routes lets it reach the tailnet (on-prem nodes, mgmt).
 resource "aws_instance" "rocky1" {
   ami                    = data.aws_ami.official_rocky9.id
   instance_type          = var.app_instance_type
@@ -429,44 +422,17 @@ resource "aws_instance" "rocky1" {
     delete_on_termination = true
   }
 
-  user_data = <<-EOF
-    #!/bin/bash
-    set -e
-
-    # ── Python ────────────────────────────────────────────────────────
-    dnf install -y python3 python3-pip
-
-    # ── user1 ─────────────────────────────────────────────────────────
-    useradd -m -s /bin/bash user1
-    mkdir -p /home/user1/.ssh
-    echo "${file(var.public_key_path)}" >> /home/user1/.ssh/authorized_keys
-    chown -R user1:user1 /home/user1/.ssh
-    chmod 700 /home/user1/.ssh
-    chmod 600 /home/user1/.ssh/authorized_keys
-    echo "user1 ALL=(ALL) NOPASSWD:ALL" >> /etc/sudoers.d/user1
-
-    # ── Tailscale ─────────────────────────────────────────────────────
-    curl -fsSL https://tailscale.com/install.sh | sh
-    systemctl enable --now tailscaled
-    until tailscale status &>/dev/null 2>&1; do sleep 2; done
-
-    tailscale up \
-      --authkey="${var.tailscale_auth_key}" \
-      --advertise-tags="tag:project1-ec2" \
-      --ephemeral \
-      --accept-routes \
-      --accept-dns=false \
-      --hostname="aws-rocky1"
-  EOF
-
-  tags = merge(local.common_tags, {
-    Name = "${var.project_name}-rocky1"
-    Role = "app"
+  # ⬇️ CLEAN AUTOMATED MAPPING
+  user_data = templatefile("${path.module}/app_bootstrap.sh", {
+    PUBLIC_KEY_CONTENT = file(var.public_key_path)
+    TS_AUTH_KEY        = var.tailscale_auth_key
+    VM_HOSTNAME        = "aws-rocky1"
   })
+
+  tags = merge(local.common_tags, { Name = "${var.project_name}-rocky1", Role = "app" })
 }
 
 # ── rocky2 ────────────────────────────────────────────────────────────
-# Private subnet, Rocky Linux (identical to rocky1 for HA).
 resource "aws_instance" "rocky2" {
   ami                    = data.aws_ami.official_rocky9.id
   instance_type          = var.app_instance_type
@@ -480,49 +446,17 @@ resource "aws_instance" "rocky2" {
     delete_on_termination = true
   }
 
-  user_data = <<-EOF
-    #!/bin/bash
-    set -e
-
-    # ── Python ────────────────────────────────────────────────────────
-    dnf install -y python3 python3-pip
-
-    # ── user1 ─────────────────────────────────────────────────────────
-    useradd -m -s /bin/bash user1
-    mkdir -p /home/user1/.ssh
-    echo "${file(var.public_key_path)}" >> /home/user1/.ssh/authorized_keys
-    chown -R user1:user1 /home/user1/.ssh
-    chmod 700 /home/user1/.ssh
-    chmod 600 /home/user1/.ssh/authorized_keys
-    echo "user1 ALL=(ALL) NOPASSWD:ALL" >> /etc/sudoers.d/user1
-
-    # ── Tailscale ─────────────────────────────────────────────────────
-    curl -fsSL https://tailscale.com/install.sh | sh
-    systemctl enable --now tailscaled
-    until tailscale status &>/dev/null 2>&1; do sleep 2; done
-
-    tailscale up \
-      --authkey="${var.tailscale_auth_key}" \
-      --advertise-tags="tag:project1-ec2" \
-      --ephemeral \
-      --accept-routes \
-      --accept-dns=false \
-      --hostname="aws-rocky2"
-  EOF
-
-  tags = merge(local.common_tags, {
-    Name = "${var.project_name}-rocky2"
-    Role = "app"
+  # ⬇️ CLEAN AUTOMATED MAPPING
+  user_data = templatefile("${path.module}/app_bootstrap.sh", {
+    PUBLIC_KEY_CONTENT = file(var.public_key_path)
+    TS_AUTH_KEY        = var.tailscale_auth_key
+    VM_HOSTNAME        = "aws-rocky2"
   })
+
+  tags = merge(local.common_tags, { Name = "${var.project_name}-rocky2", Role = "app" })
 }
 
 # ── ubuntu1 ───────────────────────────────────────────────────────────
-# Private subnet, Ubuntu.
-# Runs: PostgreSQL 17.
-#
-# Tailscale notes:
-#   • Uses apt-based installer (same curl | sh script works on Ubuntu).
-#   • Ephemeral is acceptable; Ansible connects via Tailscale IP from mgmt.
 resource "aws_instance" "ubuntu1" {
   ami                    = data.aws_ami.official_ubuntu24.id
   instance_type          = var.db_instance_type
@@ -531,47 +465,19 @@ resource "aws_instance" "ubuntu1" {
   key_name               = aws_key_pair.ansible.key_name
 
   root_block_device {
-    volume_size           = 30   # extra space for DB data
+    volume_size           = 30
     volume_type           = "gp3"
     delete_on_termination = true
   }
 
-  user_data = <<-EOF
-    #!/bin/bash
-    set -e
-    export DEBIAN_FRONTEND=noninteractive
-
-    # ── Python ────────────────────────────────────────────────────────
-    apt-get update -y
-    apt-get install -y python3 python3-full
-
-    # ── user1 ─────────────────────────────────────────────────────────
-    useradd -m -s /bin/bash user1
-    mkdir -p /home/user1/.ssh
-    echo "${file(var.public_key_path)}" >> /home/user1/.ssh/authorized_keys
-    chown -R user1:user1 /home/user1/.ssh
-    chmod 700 /home/user1/.ssh
-    chmod 600 /home/user1/.ssh/authorized_keys
-    echo "user1 ALL=(ALL) NOPASSWD:ALL" >> /etc/sudoers.d/user1
-
-    # ── Tailscale ─────────────────────────────────────────────────────
-    curl -fsSL https://tailscale.com/install.sh | sh
-    systemctl enable --now tailscaled
-    until tailscale status &>/dev/null 2>&1; do sleep 2; done
-
-    tailscale up \
-      --authkey="${var.tailscale_auth_key}" \
-      --advertise-tags="tag:project1-ec2" \
-      --ephemeral \
-      --accept-routes \
-      --accept-dns=false \
-      --hostname="aws-ubuntu1"
-  EOF
-
-  tags = merge(local.common_tags, {
-    Name = "${var.project_name}-ubuntu1"
-    Role = "db"
+  # ⬇️ CLEAN AUTOMATED MAPPING
+  user_data = templatefile("${path.module}/app_bootstrap.sh", {
+    PUBLIC_KEY_CONTENT = file(var.public_key_path)
+    TS_AUTH_KEY        = var.tailscale_auth_key
+    VM_HOSTNAME        = "aws-ubuntu1"
   })
+
+  tags = merge(local.common_tags, { Name = "${var.project_name}-ubuntu1", Role = "db" })
 }
 
 ########################################################################
