@@ -172,12 +172,7 @@ jobs:
 
       - name: Terraform Apply
         working-directory: ${{ env.TF_DIR }}
-        run: |
-          terraform apply -auto-approve \
-            -var="public_key_path=$HOME/.ssh/teamproj01ansiblekey.pub" \
-            -var="admin_cidr=0.0.0.0/0" \
-            -var="tailscale_auth_key=${{ secrets.TS_AUTH_KEY }}" \
-            -var="slack_webhook_url=${{ secrets.SLACK_WEBHOOK_URL }}"
+        run: terraform apply -auto-approve -var="public_key_path=$HOME/.ssh/teamproj01ansiblekey.pub" -var="admin_cidr=0.0.0.0/0" -var="tailscale_auth_key=${{ secrets.TS_AUTH_KEY }}" -var="slack_webhook_url=${{ secrets.SLACK_WEBHOOK_URL }}"
 
       # ── Save outputs ─────────────────────────────────────────────────
       - name: Save Terraform outputs
