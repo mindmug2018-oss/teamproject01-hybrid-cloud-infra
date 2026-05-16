@@ -28,34 +28,39 @@ provider "aws" {
   region = var.aws_region
 }
 
+# 🌟 DYNAMIC LOOKUP FOR OFFICIAL ROCKY LINUX 9 (ARM64)
 data "aws_ami" "official_rocky9" {
   most_recent = true
-  owners      = ["679593333241"] # Official Rocky Linux AWS Account
+  owners      = ["679593333241"] 
 
   filter {
     name   = "name"
-    values = ["Rocky-9-EC2-Base-9.*.x86_64*"]
+    # ⬇️ CHANGED FILTER TO LOOK FOR THE OFFICIAL ARM64 BUILD TYPE
+    values = ["Rocky-9-EC2-Base-9.*.aarch64*"] 
   }
 
   filter {
     name   = "architecture"
-    values = ["x86_64"]
+    # ⬇️ MATCHES YOUR ARM64 EC2 INSTANCE HARDWARE
+    values = ["arm64"] 
   }
 }
 
+# 🌟 DYNAMIC LOOKUP FOR OFFICIAL UBUNTU 24.04 (ARM64)
 data "aws_ami" "official_ubuntu24" {
   most_recent = true
-  owners      = ["099720109477"] # Official Canonical AWS Account ID
+  owners      = ["099720109477"] 
 
   filter {
     name   = "name"
-    # Use the optimized gp3 naming schema pattern to match the active Seoul registry 
-    values = ["ubuntu/images/hvm-ssd-gp3/ubuntu-noble-24.04-amd64-server-*"]
+    # ⬇️ CHANGED PATTERN TO EXTRACT THE OFFICIAL ARM64 BUILD REGISTRY
+    values = ["ubuntu/images/hvm-ssd-gp3/ubuntu-noble-24.04-arm64-server-*"]
   }
 
   filter {
     name   = "architecture"
-    values = ["x86_64"]
+    # ⬇️ MATCHES YOUR ARM64 EC2 INSTANCE HARDWARE
+    values = ["arm64"] 
   }
 }
 
