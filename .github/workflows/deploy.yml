@@ -263,42 +263,32 @@ jobs:
           echo "Waiting 60 seconds for mgmt background bootstrap script to install Tailscale..."
           sleep 60
 
-          # Helper: get Tailscale IP via public SSH (for mgmt)
           get_ts_ip_direct() {
             local IP=$1
             local LABEL=$2
             for i in $(seq 1 24); do
-              TS_IP=$(ssh -i ~/.ssh/teamproj01ansiblekey.pem \
-                          -o ConnectTimeout=5 \
-                          -o StrictHostKeyChecking=no \
-                          -o UserKnownHostsFile=/dev/null \
-                          user1@${IP} \
-                          "tailscale ip -4" 2>&1)
+              TS_IP=$(ssh user1@${IP} "tailscale ip -4" 2>/dev/null \
+                      | grep -Eo '^100\.[0-9]+\.[0-9]+\.[0-9]+' \
+                      | head -1 || true)
               if [[ "$TS_IP" == 100.* ]]; then
                 echo "${LABEL}_TS=${TS_IP}" >> $GITHUB_ENV
                 echo "✅ ${LABEL} Tailscale IP: ${TS_IP}"
                 return 0
               fi
-              echo "  ${LABEL}: waiting for Tailscale... attempt $i/24"
+              echo "  ${LABEL}: waiting... attempt $i/24 (raw='$(ssh user1@${IP} 'tailscale ip -4' 2>&1 | head -3 | tr '\n' '|')')"
               sleep 10
             done
-            echo "⚠️ ${LABEL}: Tailscale timeout - will use private IP via mgmt route"
+            echo "⚠️ ${LABEL}: Tailscale timeout"
+            return 1
           }
 
-          # Helper: get Tailscale IP via ProxyJump (for private instances)
           get_ts_ip_via_jump() {
             local PRIVATE_IP=$1
             local LABEL=$2
             for i in $(seq 1 24); do
-              # ⬇️ FIX: Added identity file and strict host checking bypasses to avoid proxyjump breakage
-              TS_IP=$(ssh -i ~/.ssh/teamproj01ansiblekey.pem \
-                          -o ProxyJump=user1@${{ env.MGMT_IP }} \
-                          -o ConnectTimeout=5 \
-                          -o StrictHostKeyChecking=no \
-                          -o UserKnownHostsFile=/dev/null \
-                          user1@${PRIVATE_IP} \
-                          "tailscale ip -4" 2>/dev/null | grep -E '^100\.' || echo "")
-              
+              TS_IP=$(ssh -o ProxyJump=user1@${{ env.MGMT_IP }} user1@${PRIVATE_IP} "tailscale ip -4" 2>/dev/null \
+                      | grep -Eo '^100\.[0-9]+\.[0-9]+\.[0-9]+' \
+                      | head -1 || true)
               if [[ "$TS_IP" == 100.* ]]; then
                 echo "${LABEL}_TS=${TS_IP}" >> $GITHUB_ENV
                 echo "✅ ${LABEL} Tailscale IP: ${TS_IP}"
