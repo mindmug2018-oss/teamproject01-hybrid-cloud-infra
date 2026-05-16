@@ -36,7 +36,8 @@ curl -fsSL https://tailscale.com/install.sh | sh
 systemctl daemon-reload || true
 systemctl enable --now tailscaled
 
-until tailscale status &>/dev/null 2>&1; do
+for i in {1..30}; do
+  systemctl is-active --quiet tailscaled && break
   sleep 2
 done
 

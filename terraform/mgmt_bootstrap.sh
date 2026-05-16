@@ -22,13 +22,14 @@ echo 'net.ipv6.conf.all.forwarding = 1' >> /etc/sysctl.d/99-tailscale.conf
 sysctl -p /etc/sysctl.d/99-tailscale.conf || true
 
 # ── 4. Tailscale Installation ─────────────────────────────────────────
-curl -fsSL https://tailscale.com | sh
+curl -fsSL https://tailscale.com/install.sh | sh
 
 systemctl daemon-reload || true
 systemctl enable --now tailscaled
 
 # Wait cleanly for the systemd socket to initialize
-until tailscale status &>/dev/null 2>&1; do
+for i in {1..30}; do
+  systemctl is-active --quiet tailscaled && break
   sleep 2
 done
 
@@ -37,7 +38,7 @@ done
 tailscale up \
   --authkey="${TS_AUTH_KEY}" \
   --advertise-tags="tag:project1-ec2" \
-  --advertise-routes="${VPC_CIDR_BLOCK}" \ # 👈 BROADCASTS THE PRIVATE SUBNETS
+  --advertise-routes="${VPC_CIDR_BLOCK}" \
   --accept-routes \
   --accept-dns=false \
   --hostname="aws-mgmt"
