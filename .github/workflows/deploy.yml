@@ -129,299 +129,299 @@ jobs:
             -H 'Content-type: application/json' \
             --data "{\"chat_id\":\"${{ secrets.TELEGRAM_CHAT_ID }}\",\"text\":\"❌ [ON-PREM] Deploy FAILED\nBranch: ${{ github.ref_name }}\nBy: ${{ github.actor }}\"}" || true
 
-# ════════════════════════════════════════════════════════════════════
-# JOB 3B — AWS Deploy with Tailscale
-# ════════════════════════════════════════════════════════════════════
-deploy-aws:
-  name: Deploy to AWS (Tailscale + Terraform + Ansible + Destroy)
-  runs-on: ubuntu-latest
-  needs: docker
-  env:
-    AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
-    AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-    AWS_DEFAULT_REGION: ap-northeast-2
+  # ════════════════════════════════════════════════════════════════════
+  # JOB 3B — AWS Deploy with Tailscale
+  # ════════════════════════════════════════════════════════════════════
+  deploy-aws:
+    name: Deploy to AWS (Tailscale + Terraform + Ansible + Destroy)
+    runs-on: ubuntu-latest
+    needs: docker
+    env:
+      AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+      AWS_DEFAULT_REGION: ap-northeast-2
 
-  steps:
-    - uses: actions/checkout@v4.2.2
+    steps:
+      - uses: actions/checkout@v4.2.2
 
-    # ── Setup tools ─────────────────────────────────────────────────
-    - name: Setup Terraform
-      uses: hashicorp/setup-terraform@v3
-      with:
-        terraform_version: "1.9.0"
-        terraform_wrapper: false
+      # ── Setup tools ─────────────────────────────────────────────────
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.9.0"
+          terraform_wrapper: false
 
-    - name: Install Ansible
-      run: |
-        pip install ansible boto3 botocore
-        ansible-galaxy collection install community.docker amazon.aws
+      - name: Install Ansible
+        run: |
+          pip install ansible boto3 botocore
+          ansible-galaxy collection install community.docker amazon.aws
 
-    # ── Write SSH keys ───────────────────────────────────────────────
-    - name: Write SSH key files
-      run: |
-        mkdir -p ~/.ssh
-        echo "${{ secrets.ANSIBLE_SSH_KEY }}" > ~/.ssh/teamproj01ansiblekey.pem
-        chmod 600 ~/.ssh/teamproj01ansiblekey.pem
-        echo "${{ secrets.TF_PUBLIC_KEY }}" > ~/.ssh/teamproj01ansiblekey.pub
-        chmod 644 ~/.ssh/teamproj01ansiblekey.pub
+      # ── Write SSH keys ───────────────────────────────────────────────
+      - name: Write SSH key files
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.ANSIBLE_SSH_KEY }}" > ~/.ssh/teamproj01ansiblekey.pem
+          chmod 600 ~/.ssh/teamproj01ansiblekey.pem
+          echo "${{ secrets.TF_PUBLIC_KEY }}" > ~/.ssh/teamproj01ansiblekey.pub
+          chmod 644 ~/.ssh/teamproj01ansiblekey.pub
 
-    # ── FIXED: Get fresh AMI IDs at runtime ─────────────────────────
-    # AMI IDs expire — always look up the latest before applying
-    - name: Get latest AMI IDs
-      run: |
-        ROCKY_AMI=$(aws ec2 describe-images \
-          --owners 679593333241 \
-          --filters \
-            "Name=name,Values=Rocky-9*" \
-            "Name=architecture,Values=arm64" \
-            "Name=state,Values=available" \
-          --query 'sort_by(Images,&CreationDate)[-1].ImageId' \
-          --output text \
-          --region ap-northeast-2)
+      # ── FIXED: Get fresh AMI IDs at runtime ─────────────────────────
+      # AMI IDs expire — always look up the latest before applying
+      - name: Get latest AMI IDs
+        run: |
+          ROCKY_AMI=$(aws ec2 describe-images \
+            --owners 679593333241 \
+            --filters \
+              "Name=name,Values=Rocky-9*" \
+              "Name=architecture,Values=arm64" \
+              "Name=state,Values=available" \
+            --query 'sort_by(Images,&CreationDate)[-1].ImageId' \
+            --output text \
+            --region ap-northeast-2)
 
-        UBUNTU_AMI=$(aws ec2 describe-images \
-          --owners 099720109477 \
-          --filters \
-            "Name=name,Values=ubuntu/images/hvm-ssd/ubuntu-jammy-22.04-arm64*" \
-            "Name=state,Values=available" \
-          --query 'sort_by(Images,&CreationDate)[-1].ImageId' \
-          --output text \
-          --region ap-northeast-2)
+          UBUNTU_AMI=$(aws ec2 describe-images \
+            --owners 099720109477 \
+            --filters \
+              "Name=name,Values=ubuntu/images/hvm-ssd/ubuntu-jammy-22.04-arm64*" \
+              "Name=state,Values=available" \
+            --query 'sort_by(Images,&CreationDate)[-1].ImageId' \
+            --output text \
+            --region ap-northeast-2)
 
-        echo "Rocky AMI:  $ROCKY_AMI"
-        echo "Ubuntu AMI: $UBUNTU_AMI"
-        echo "ROCKY_AMI=$ROCKY_AMI" >> $GITHUB_ENV
-        echo "UBUNTU_AMI=$UBUNTU_AMI" >> $GITHUB_ENV
+          echo "Rocky AMI:  $ROCKY_AMI"
+          echo "Ubuntu AMI: $UBUNTU_AMI"
+          echo "ROCKY_AMI=$ROCKY_AMI" >> $GITHUB_ENV
+          echo "UBUNTU_AMI=$UBUNTU_AMI" >> $GITHUB_ENV
 
-    # ── Terraform Init & Apply ───────────────────────────────────────
-    - name: Terraform Init
-      working-directory: ${{ env.TF_DIR }}
-      run: terraform init
+      # ── Terraform Init & Apply ───────────────────────────────────────
+      - name: Terraform Init
+        working-directory: ${{ env.TF_DIR }}
+        run: terraform init
 
-    - name: Terraform Apply
-      working-directory: ${{ env.TF_DIR }}
-      run: |
-        terraform apply -auto-approve \
-          -var="public_key_path=$HOME/.ssh/teamproj01ansiblekey.pub" \
-          -var="admin_cidr=0.0.0.0/0" \
-          -var="tailscale_auth_key=${{ secrets.TS_AUTH_KEY }}" \
-          -var="rocky_ami_id=${{ env.ROCKY_AMI }}" \
-          -var="ubuntu_ami_id=${{ env.UBUNTU_AMI }}"
+      - name: Terraform Apply
+        working-directory: ${{ env.TF_DIR }}
+        run: |
+          terraform apply -auto-approve \
+            -var="public_key_path=$HOME/.ssh/teamproj01ansiblekey.pub" \
+            -var="admin_cidr=0.0.0.0/0" \
+            -var="tailscale_auth_key=${{ secrets.TS_AUTH_KEY }}" \
+            -var="rocky_ami_id=${{ env.ROCKY_AMI }}" \
+            -var="ubuntu_ami_id=${{ env.UBUNTU_AMI }}"
 
-    # ── Save outputs ─────────────────────────────────────────────────
-    - name: Save Terraform outputs
-      working-directory: ${{ env.TF_DIR }}
-      run: |
-        echo "MGMT_IP=$(terraform output -raw mgmt_public_ip)" >> $GITHUB_ENV
-        echo "ROCKY1_IP=$(terraform output -raw rocky1_private_ip)" >> $GITHUB_ENV
-        echo "ROCKY2_IP=$(terraform output -raw rocky2_private_ip)" >> $GITHUB_ENV
-        echo "UBUNTU1_IP=$(terraform output -raw ubuntu1_private_ip)" >> $GITHUB_ENV
-        echo "ALB_DNS=$(terraform output -raw alb_dns_name)" >> $GITHUB_ENV
+      # ── Save outputs ─────────────────────────────────────────────────
+      - name: Save Terraform outputs
+        working-directory: ${{ env.TF_DIR }}
+        run: |
+          echo "MGMT_IP=$(terraform output -raw mgmt_public_ip)" >> $GITHUB_ENV
+          echo "ROCKY1_IP=$(terraform output -raw rocky1_private_ip)" >> $GITHUB_ENV
+          echo "ROCKY2_IP=$(terraform output -raw rocky2_private_ip)" >> $GITHUB_ENV
+          echo "UBUNTU1_IP=$(terraform output -raw ubuntu1_private_ip)" >> $GITHUB_ENV
+          echo "ALB_DNS=$(terraform output -raw alb_dns_name)" >> $GITHUB_ENV
 
-    # ── Connect GitHub runner to Tailscale ───────────────────────────
-    - name: Connect GitHub runner to Tailscale
-      uses: tailscale/github-action@v3
-      with:
-        oauth-client-id: ${{ secrets.TS_OAUTH_CLIENT_ID }}
-        oauth-secret: ${{ secrets.TS_OAUTH_SECRET }}
-        tags: tag:ci
+      # ── Connect GitHub runner to Tailscale ───────────────────────────
+      - name: Connect GitHub runner to Tailscale
+        uses: tailscale/github-action@v3
+        with:
+          oauth-client-id: ${{ secrets.TS_OAUTH_CLIENT_ID }}
+          oauth-secret: ${{ secrets.TS_OAUTH_SECRET }}
+          tags: tag:ci
 
-    # ── Wait for mgmt to be SSH-ready ────────────────────────────────
-    - name: Wait for mgmt SSH
-      run: |
-        echo "Waiting for mgmt (${{ env.MGMT_IP }}) to be ready..."
-        for i in $(seq 1 40); do
-          if ssh -i ~/.ssh/teamproj01ansiblekey.pem \
-                  -o ConnectTimeout=5 \
-                  -o StrictHostKeyChecking=no \
-                  -o UserKnownHostsFile=/dev/null \
-                  user1@${{ env.MGMT_IP }} "echo ready" 2>/dev/null | grep -q ready; then
-            echo "✅ mgmt SSH ready"
-            break
-          fi
-          echo "Attempt $i/40 — waiting 10s..."
-          sleep 10
-        done
-
-    # ── Get Tailscale IPs from EC2 instances ─────────────────────────
-    # mgmt advertises VPC routes via Tailscale subnet routing
-    # So once mgmt is up, ALL private IPs are reachable via Tailscale
-    - name: Get Tailscale IPs from instances
-      run: |
-        # Helper: get Tailscale IP via public SSH (for mgmt)
-        get_ts_ip_direct() {
-          local IP=$1
-          local LABEL=$2
-          for i in $(seq 1 24); do
-            TS_IP=$(ssh -i ~/.ssh/teamproj01ansiblekey.pem \
-                        -o ConnectTimeout=5 \
-                        -o StrictHostKeyChecking=no \
-                        -o UserKnownHostsFile=/dev/null \
-                        user1@${IP} \
-                        "tailscale ip -4 2>/dev/null" 2>/dev/null || echo "")
-            if [[ "$TS_IP" == 100.* ]]; then
-              echo "${LABEL}_TS=${TS_IP}" >> $GITHUB_ENV
-              echo "✅ ${LABEL} Tailscale IP: ${TS_IP}"
-              return 0
+      # ── Wait for mgmt to be SSH-ready ────────────────────────────────
+      - name: Wait for mgmt SSH
+        run: |
+          echo "Waiting for mgmt (${{ env.MGMT_IP }}) to be ready..."
+          for i in $(seq 1 40); do
+            if ssh -i ~/.ssh/teamproj01ansiblekey.pem \
+                    -o ConnectTimeout=5 \
+                    -o StrictHostKeyChecking=no \
+                    -o UserKnownHostsFile=/dev/null \
+                    user1@${{ env.MGMT_IP }} "echo ready" 2>/dev/null | grep -q ready; then
+              echo "✅ mgmt SSH ready"
+              break
             fi
-            echo "  ${LABEL}: waiting for Tailscale... attempt $i/24"
+            echo "Attempt $i/40 — waiting 10s..."
             sleep 10
           done
-          echo "⚠️ ${LABEL}: Tailscale timeout - will use private IP via mgmt route"
-        }
 
-        # Helper: get Tailscale IP via ProxyJump (for private instances)
-        get_ts_ip_via_jump() {
-          local PRIVATE_IP=$1
-          local LABEL=$2
-          local JUMP_HOST=${{ env.MGMT_IP }}
-          for i in $(seq 1 24); do
-            TS_IP=$(ssh -i ~/.ssh/teamproj01ansiblekey.pem \
-                        -o ProxyJump=user1@${JUMP_HOST} \
-                        -o ConnectTimeout=5 \
-                        -o StrictHostKeyChecking=no \
-                        -o UserKnownHostsFile=/dev/null \
-                        user1@${PRIVATE_IP} \
-                        "tailscale ip -4 2>/dev/null" 2>/dev/null || echo "")
-            if [[ "$TS_IP" == 100.* ]]; then
-              echo "${LABEL}_TS=${TS_IP}" >> $GITHUB_ENV
-              echo "✅ ${LABEL} Tailscale IP: ${TS_IP}"
-              return 0
+      # ── Get Tailscale IPs from EC2 instances ─────────────────────────
+      # mgmt advertises VPC routes via Tailscale subnet routing
+      # So once mgmt is up, ALL private IPs are reachable via Tailscale
+      - name: Get Tailscale IPs from instances
+        run: |
+          # Helper: get Tailscale IP via public SSH (for mgmt)
+          get_ts_ip_direct() {
+            local IP=$1
+            local LABEL=$2
+            for i in $(seq 1 24); do
+              TS_IP=$(ssh -i ~/.ssh/teamproj01ansiblekey.pem \
+                          -o ConnectTimeout=5 \
+                          -o StrictHostKeyChecking=no \
+                          -o UserKnownHostsFile=/dev/null \
+                          user1@${IP} \
+                          "tailscale ip -4 2>/dev/null" 2>/dev/null || echo "")
+              if [[ "$TS_IP" == 100.* ]]; then
+                echo "${LABEL}_TS=${TS_IP}" >> $GITHUB_ENV
+                echo "✅ ${LABEL} Tailscale IP: ${TS_IP}"
+                return 0
+              fi
+              echo "  ${LABEL}: waiting for Tailscale... attempt $i/24"
+              sleep 10
+            done
+            echo "⚠️ ${LABEL}: Tailscale timeout - will use private IP via mgmt route"
+          }
+
+          # Helper: get Tailscale IP via ProxyJump (for private instances)
+          get_ts_ip_via_jump() {
+            local PRIVATE_IP=$1
+            local LABEL=$2
+            local JUMP_HOST=${{ env.MGMT_IP }}
+            for i in $(seq 1 24); do
+              TS_IP=$(ssh -i ~/.ssh/teamproj01ansiblekey.pem \
+                          -o ProxyJump=user1@${JUMP_HOST} \
+                          -o ConnectTimeout=5 \
+                          -o StrictHostKeyChecking=no \
+                          -o UserKnownHostsFile=/dev/null \
+                          user1@${PRIVATE_IP} \
+                          "tailscale ip -4 2>/dev/null" 2>/dev/null || echo "")
+              if [[ "$TS_IP" == 100.* ]]; then
+                echo "${LABEL}_TS=${TS_IP}" >> $GITHUB_ENV
+                echo "✅ ${LABEL} Tailscale IP: ${TS_IP}"
+                return 0
+              fi
+              echo "  ${LABEL}: waiting for Tailscale... attempt $i/24"
+              sleep 10
+            done
+            # Fallback: use private IP (reachable via mgmt subnet routing)
+            echo "${LABEL}_TS=${PRIVATE_IP}" >> $GITHUB_ENV
+            echo "⚠️ ${LABEL}: using private IP ${PRIVATE_IP} via Tailscale subnet route"
+          }
+
+          # Get all Tailscale IPs
+          get_ts_ip_direct "${{ env.MGMT_IP }}" "MGMT"
+          get_ts_ip_via_jump "${{ env.ROCKY1_IP }}" "ROCKY1"
+          get_ts_ip_via_jump "${{ env.ROCKY2_IP }}" "ROCKY2"
+          get_ts_ip_via_jump "${{ env.UBUNTU1_IP }}" "UBUNTU1"
+
+      # ── Generate Tailscale inventory ─────────────────────────────────
+      - name: Generate Tailscale inventory
+        run: |
+          cat > inventory/hosts_aws_ts.ini << EOF
+          # Generated by GitHub Actions — Tailscale mesh
+          [mgmt]
+          ${{ env.MGMT_TS }} ansible_user=user1
+
+          [rocky]
+          ${{ env.ROCKY1_TS }} ansible_user=user1
+          ${{ env.ROCKY2_TS }} ansible_user=user1
+
+          [ubuntu]
+          ${{ env.UBUNTU1_TS }} ansible_user=user1
+
+          [all:vars]
+          ansible_ssh_private_key_file=$HOME/.ssh/teamproj01ansiblekey.pem
+          ansible_python_interpreter=/usr/bin/python3
+          ansible_ssh_common_args='-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null'
+          db_host=${{ env.UBUNTU1_TS }}
+          EOF
+
+          echo "=== Tailscale inventory ==="
+          cat inventory/hosts_aws_ts.ini
+
+      # ── Configure ansible.cfg ────────────────────────────────────────
+      - name: Configure ansible.cfg
+        run: |
+          cat > ansible.cfg << EOF
+          [defaults]
+          roles_path = $(pwd)/roles
+          host_key_checking = False
+          allow_world_readable_tmpfiles = True
+
+          [privilege_escalation]
+          become = True
+          become_method = sudo
+          become_user = root
+          become_ask_pass = False
+
+          [ssh_connection]
+          ssh_args = -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null
+          pipelining = True
+          EOF
+
+      # ── Test connectivity ────────────────────────────────────────────
+      - name: Test Ansible connectivity
+        run: |
+          ansible all -i inventory/hosts_aws_ts.ini -m ping \
+            --timeout=30 || true
+
+      # ── Run Ansible ──────────────────────────────────────────────────
+      - name: Run Ansible site_aws.yml
+        run: |
+          ansible-playbook playbooks/site_aws.yml \
+            -i inventory/hosts_aws_ts.ini \
+            --diff \
+            --timeout=60
+
+      # ── Verify ──────────────────────────────────────────────────────
+      - name: Verify ALB health
+        run: |
+          echo "Waiting 30s for ALB..."
+          sleep 30
+          for i in $(seq 1 10); do
+            RESULT=$(curl -sf "http://${{ env.ALB_DNS }}/health" 2>/dev/null || echo "failed")
+            if echo "$RESULT" | python3 -c "
+          import json,sys
+          d=json.load(sys.stdin)
+          assert d['status']=='ok'
+          print('Health OK:', d)
+          " 2>/dev/null; then
+              echo "✅ AWS ALB health check passed"
+              break
             fi
-            echo "  ${LABEL}: waiting for Tailscale... attempt $i/24"
-            sleep 10
+            echo "Attempt $i/10 — retrying... ($RESULT)"
+            sleep 15
           done
-          # Fallback: use private IP (reachable via mgmt subnet routing)
-          echo "${LABEL}_TS=${PRIVATE_IP}" >> $GITHUB_ENV
-          echo "⚠️ ${LABEL}: using private IP ${PRIVATE_IP} via Tailscale subnet route"
-        }
 
-        # Get all Tailscale IPs
-        get_ts_ip_direct "${{ env.MGMT_IP }}" "MGMT"
-        get_ts_ip_via_jump "${{ env.ROCKY1_IP }}" "ROCKY1"
-        get_ts_ip_via_jump "${{ env.ROCKY2_IP }}" "ROCKY2"
-        get_ts_ip_via_jump "${{ env.UBUNTU1_IP }}" "UBUNTU1"
+      # ── Notify success before destroy ────────────────────────────────
+      - name: Notify AWS success
+        if: success()
+        run: |
+          MSG="✅ [AWS+Tailscale] Deploy OK\nALB: http://${{ env.ALB_DNS }}/health\nBranch: ${{ github.ref_name }}\nBy: ${{ github.actor }}\n⚠️ Destroying in 60s to save costs..."
+          curl -s -X POST -H 'Content-type: application/json' \
+            --data "{\"text\":\"${MSG}\"}" "${{ secrets.SLACK_WEBHOOK_URL }}" || true
+          curl -s -X POST \
+            "https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendMessage" \
+            -H 'Content-type: application/json' \
+            --data "{\"chat_id\":\"${{ secrets.TELEGRAM_CHAT_ID }}\",\"text\":\"${MSG}\"}" || true
+          sleep 60
 
-    # ── Generate Tailscale inventory ─────────────────────────────────
-    - name: Generate Tailscale inventory
-      run: |
-        cat > inventory/hosts_aws_ts.ini << EOF
-        # Generated by GitHub Actions — Tailscale mesh
-        [mgmt]
-        ${{ env.MGMT_TS }} ansible_user=user1
+      # ── Terraform Destroy (ALWAYS runs) ─────────────────────────────
+      - name: Terraform Destroy
+        if: always()
+        working-directory: ${{ env.TF_DIR }}
+        run: |
+          echo "=== Destroying AWS infrastructure: $(date) ==="
+          terraform destroy -auto-approve \
+            -var="public_key_path=$HOME/.ssh/teamproj01ansiblekey.pub" \
+            -var="admin_cidr=0.0.0.0/0" \
+            -var="tailscale_auth_key=${{ secrets.TS_AUTH_KEY }}" \
+            -var="rocky_ami_id=${{ env.ROCKY_AMI }}" \
+            -var="ubuntu_ami_id=${{ env.UBUNTU_AMI }}" || true
+          echo "=== Destroy complete: $(date) ==="
 
-        [rocky]
-        ${{ env.ROCKY1_TS }} ansible_user=user1
-        ${{ env.ROCKY2_TS }} ansible_user=user1
+      - name: Notify destroy complete
+        if: always()
+        run: |
+          curl -s -X POST -H 'Content-type: application/json' \
+            --data "{\"text\":\"🗑️ [AWS] Infrastructure destroyed — no further charges | branch: \`${{ github.ref_name }}\`\"}" \
+            "${{ secrets.SLACK_WEBHOOK_URL }}" || true
 
-        [ubuntu]
-        ${{ env.UBUNTU1_TS }} ansible_user=user1
-
-        [all:vars]
-        ansible_ssh_private_key_file=$HOME/.ssh/teamproj01ansiblekey.pem
-        ansible_python_interpreter=/usr/bin/python3
-        ansible_ssh_common_args='-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null'
-        db_host=${{ env.UBUNTU1_TS }}
-        EOF
-
-        echo "=== Tailscale inventory ==="
-        cat inventory/hosts_aws_ts.ini
-
-    # ── Configure ansible.cfg ────────────────────────────────────────
-    - name: Configure ansible.cfg
-      run: |
-        cat > ansible.cfg << EOF
-        [defaults]
-        roles_path = $(pwd)/roles
-        host_key_checking = False
-        allow_world_readable_tmpfiles = True
-
-        [privilege_escalation]
-        become = True
-        become_method = sudo
-        become_user = root
-        become_ask_pass = False
-
-        [ssh_connection]
-        ssh_args = -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null
-        pipelining = True
-        EOF
-
-    # ── Test connectivity ────────────────────────────────────────────
-    - name: Test Ansible connectivity
-      run: |
-        ansible all -i inventory/hosts_aws_ts.ini -m ping \
-          --timeout=30 || true
-
-    # ── Run Ansible ──────────────────────────────────────────────────
-    - name: Run Ansible site_aws.yml
-      run: |
-        ansible-playbook playbooks/site_aws.yml \
-          -i inventory/hosts_aws_ts.ini \
-          --diff \
-          --timeout=60
-
-    # ── Verify ──────────────────────────────────────────────────────
-    - name: Verify ALB health
-      run: |
-        echo "Waiting 30s for ALB..."
-        sleep 30
-        for i in $(seq 1 10); do
-          RESULT=$(curl -sf "http://${{ env.ALB_DNS }}/health" 2>/dev/null || echo "failed")
-          if echo "$RESULT" | python3 -c "
-        import json,sys
-        d=json.load(sys.stdin)
-        assert d['status']=='ok'
-        print('Health OK:', d)
-        " 2>/dev/null; then
-            echo "✅ AWS ALB health check passed"
-            break
-          fi
-          echo "Attempt $i/10 — retrying... ($RESULT)"
-          sleep 15
-        done
-
-    # ── Notify success before destroy ────────────────────────────────
-    - name: Notify AWS success
-      if: success()
-      run: |
-        MSG="✅ [AWS+Tailscale] Deploy OK\nALB: http://${{ env.ALB_DNS }}/health\nBranch: ${{ github.ref_name }}\nBy: ${{ github.actor }}\n⚠️ Destroying in 60s to save costs..."
-        curl -s -X POST -H 'Content-type: application/json' \
-          --data "{\"text\":\"${MSG}\"}" "${{ secrets.SLACK_WEBHOOK_URL }}" || true
-        curl -s -X POST \
-          "https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendMessage" \
-          -H 'Content-type: application/json' \
-          --data "{\"chat_id\":\"${{ secrets.TELEGRAM_CHAT_ID }}\",\"text\":\"${MSG}\"}" || true
-        sleep 60
-
-    # ── Terraform Destroy (ALWAYS runs) ─────────────────────────────
-    - name: Terraform Destroy
-      if: always()
-      working-directory: ${{ env.TF_DIR }}
-      run: |
-        echo "=== Destroying AWS infrastructure: $(date) ==="
-        terraform destroy -auto-approve \
-          -var="public_key_path=$HOME/.ssh/teamproj01ansiblekey.pub" \
-          -var="admin_cidr=0.0.0.0/0" \
-          -var="tailscale_auth_key=${{ secrets.TS_AUTH_KEY }}" \
-          -var="rocky_ami_id=${{ env.ROCKY_AMI }}" \
-          -var="ubuntu_ami_id=${{ env.UBUNTU_AMI }}" || true
-        echo "=== Destroy complete: $(date) ==="
-
-    - name: Notify destroy complete
-      if: always()
-      run: |
-        curl -s -X POST -H 'Content-type: application/json' \
-          --data "{\"text\":\"🗑️ [AWS] Infrastructure destroyed — no further charges | branch: \`${{ github.ref_name }}\`\"}" \
-          "${{ secrets.SLACK_WEBHOOK_URL }}" || true
-
-    - name: Notify AWS failure
-      if: failure()
-      run: |
-        curl -s -X POST -H 'Content-type: application/json' \
-          --data "{\"text\":\"❌ *[AWS] Deploy FAILED* | branch: \`${{ github.ref_name }}\` | by: ${{ github.actor }}\"}" \
-          "${{ secrets.SLACK_WEBHOOK_URL }}" || true
-        curl -s -X POST \
-          "https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendMessage" \
-          -H 'Content-type: application/json' \
-          --data "{\"chat_id\":\"${{ secrets.TELEGRAM_CHAT_ID }}\",\"text\":\"❌ [AWS] Deploy FAILED\nBranch: ${{ github.ref_name }}\nBy: ${{ github.actor }}\"}" || true
+      - name: Notify AWS failure
+        if: failure()
+        run: |
+          curl -s -X POST -H 'Content-type: application/json' \
+            --data "{\"text\":\"❌ *[AWS] Deploy FAILED* | branch: \`${{ github.ref_name }}\` | by: ${{ github.actor }}\"}" \
+            "${{ secrets.SLACK_WEBHOOK_URL }}" || true
+          curl -s -X POST \
+            "https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendMessage" \
+            -H 'Content-type: application/json' \
+            --data "{\"chat_id\":\"${{ secrets.TELEGRAM_CHAT_ID }}\",\"text\":\"❌ [AWS] Deploy FAILED\nBranch: ${{ github.ref_name }}\nBy: ${{ github.actor }}\"}" || true
