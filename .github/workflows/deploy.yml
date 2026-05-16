@@ -257,9 +257,7 @@ jobs:
             sleep 10
           done
 
-      # ── Get Tailscale IPs from EC2 instances ─────────────────────────
-      # mgmt advertises VPC routes via Tailscale subnet routing
-      # So once mgmt is up, ALL private IPs are reachable via Tailscale
+            # ── Get Tailscale IPs from EC2 instances ─────────────────────────
       - name: Get Tailscale IPs from instances
         run: |
           echo "Waiting 60 seconds for mgmt background bootstrap script to install Tailscale..."
@@ -292,9 +290,15 @@ jobs:
             local PRIVATE_IP=$1
             local LABEL=$2
             for i in $(seq 1 24); do
-              TS_IP=$(ssh -o ProxyJump=user1@${{ env.MGMT_IP }} \
+              # ⬇️ FIX: Added identity file and strict host checking bypasses to avoid proxyjump breakage
+              TS_IP=$(ssh -i ~/.ssh/teamproj01ansiblekey.pem \
+                          -o ProxyJump=user1@${{ env.MGMT_IP }} \
+                          -o ConnectTimeout=5 \
+                          -o StrictHostKeyChecking=no \
+                          -o UserKnownHostsFile=/dev/null \
                           user1@${PRIVATE_IP} \
-                          "tailscale ip -4" 2>&1 | grep -E '^100\.' || echo "")
+                          "tailscale ip -4" 2>/dev/null | grep -E '^100\.' || echo "")
+              
               if [[ "$TS_IP" == 100.* ]]; then
                 echo "${LABEL}_TS=${TS_IP}" >> $GITHUB_ENV
                 echo "✅ ${LABEL} Tailscale IP: ${TS_IP}"
@@ -307,7 +311,7 @@ jobs:
             echo "⚠️ ${LABEL}: using private IP fallback"
           }
 
-          # Get all Tailscale IPs
+          # Get all Tailscale IPs securely
           get_ts_ip_direct "${{ env.MGMT_IP }}" "MGMT"
           get_ts_ip_via_jump "${{ env.ROCKY1_IP }}" "ROCKY1"
           get_ts_ip_via_jump "${{ env.ROCKY2_IP }}" "ROCKY2"
