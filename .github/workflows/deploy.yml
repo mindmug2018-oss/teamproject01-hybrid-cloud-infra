@@ -214,6 +214,9 @@ jobs:
       # So once mgmt is up, ALL private IPs are reachable via Tailscale
       - name: Get Tailscale IPs from instances
         run: |
+          echo "Waiting 60 seconds for mgmt background bootstrap script to install Tailscale..."
+          sleep 60
+          
           # Helper: get Tailscale IP via public SSH (for mgmt)
           get_ts_ip_direct() {
             local IP=$1
