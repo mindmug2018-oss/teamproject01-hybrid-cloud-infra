@@ -347,7 +347,7 @@ resource "aws_key_pair" "ansible" {
 #     GitHub Actions runner (or your laptop) can reach private instances.
 #   • --accept-routes lets mgmt reach on-prem nodes via their Tailscale IPs.
 resource "aws_instance" "mgmt" {
-  ami                         = var.rocky_ami_id
+  ami                         = data.aws_ami.official_rocky9.id
   instance_type               = var.mgmt_instance_type
   subnet_id                   = aws_subnet.public[0].id
   vpc_security_group_ids      = [aws_security_group.mgmt.id]
@@ -382,7 +382,7 @@ resource "aws_instance" "mgmt" {
 #   • No --advertise-routes needed; mgmt handles subnet routing.
 #   • --accept-routes lets it reach the tailnet (on-prem nodes, mgmt).
 resource "aws_instance" "rocky1" {
-  ami                    = var.rocky_ami_id
+  ami                    = data.aws_ami.official_rocky9.id
   instance_type          = var.app_instance_type
   subnet_id              = aws_subnet.private[0].id
   vpc_security_group_ids = [aws_security_group.app.id]
@@ -433,7 +433,7 @@ resource "aws_instance" "rocky1" {
 # ── rocky2 ────────────────────────────────────────────────────────────
 # Private subnet, Rocky Linux (identical to rocky1 for HA).
 resource "aws_instance" "rocky2" {
-  ami                    = var.rocky_ami_id
+  ami                    = data.aws_ami.official_rocky9.id
   instance_type          = var.app_instance_type
   subnet_id              = aws_subnet.private[1].id
   vpc_security_group_ids = [aws_security_group.app.id]
@@ -489,7 +489,7 @@ resource "aws_instance" "rocky2" {
 #   • Uses apt-based installer (same curl | sh script works on Ubuntu).
 #   • Ephemeral is acceptable; Ansible connects via Tailscale IP from mgmt.
 resource "aws_instance" "ubuntu1" {
-  ami                    = var.ubuntu_ami_id
+  ami                    = data.aws_ami.official_ubuntu24.id
   instance_type          = var.db_instance_type
   subnet_id              = aws_subnet.private[0].id
   vpc_security_group_ids = [aws_security_group.db.id]
