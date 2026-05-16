@@ -1,4 +1,6 @@
 #!/bin/bash
+exec > >(tee /var/log/bootstrap.log | logger -t bootstrap) 2>&1
+set -x
 set -e
 
 # ── 1. Python & Mirror Sync (With Retry) ──────────────────────────────

@@ -238,7 +238,7 @@ jobs:
           oauth-client-id: ${{ secrets.TS_OAUTH_CLIENT_ID }}
           oauth-secret: ${{ secrets.TS_OAUTH_SECRET }}
           tags: tag:project1-ec2
-          accept-routes: true
+          args: --accept-routes
 
       # ── Wait for mgmt to be SSH-ready ────────────────────────────────
       - name: Wait for mgmt SSH

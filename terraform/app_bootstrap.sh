@@ -1,5 +1,7 @@
 #!/bin/bash
 # (No set -e at the top to prevent minor package warnings from crashing the boot process)
+exec > >(tee /var/log/bootstrap.log | logger -t bootstrap) 2>&1
+set -x
 
 # ── 1. OS Auto-Detection & Package Setup ─────────────────────────────
 if [ -f /etc/os-release ]; then
