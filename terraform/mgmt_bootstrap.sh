@@ -14,16 +14,15 @@ chmod 600 /home/user1/.ssh/authorized_keys
 echo "user1 ALL=(ALL) NOPASSWD:ALL" >> /etc/sudoers.d/user1
 
 # ── IP forwarding (required for Tailscale subnet routing) ─────────────
-# ⚠️ ADDED "|| true" to prevent minor warnings from crashing set -e
 echo 'net.ipv4.ip_forward = 1' >> /etc/sysctl.d/99-tailscale.conf
 echo 'net.ipv6.conf.all.forwarding = 1' >> /etc/sysctl.d/99-tailscale.conf
+# ⚠️ ADDED "|| true" HERE TO PREVENT MINOR SYSTEM WARNINGS FROM CRASHING THE AUTOMATION
 sysctl -p /etc/sysctl.d/99-tailscale.conf || true
 
 # ── Tailscale ─────────────────────────────────────────────────────────
-curl -fsSL https://tailscale.com/install.sh | sh
+curl -fsSL https://tailscale.com | sh
 
-# ⚠️ CRITICAL FIX FOR OFFICIAL ROCKY LINUX IMAGES
-# Forces systemd to recognize the newly installed Tailscale service files
+# Forces systemd to register the newly downloaded Tailscale binaries
 systemctl daemon-reload || true
 systemctl enable --now tailscaled
 
@@ -33,8 +32,10 @@ until tailscale status &>/dev/null 2>&1; do
 done
 
 # Join the Tailscale network
+# ⚠️ ENFORCE THE WORKED KEY PARAMETERS HERE NATIVELY
 tailscale up \
   --authkey="${TS_AUTH_KEY}" \
+  --advertise-tags="tag:project1-ec2" \
   --advertise-routes="${VPC_CIDR_BLOCK}" \
   --accept-routes \
   --accept-dns=false \
