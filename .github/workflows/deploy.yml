@@ -172,8 +172,16 @@ jobs:
 
       - name: Terraform Apply
         working-directory: ${{ env.TF_DIR }}
-        run: terraform apply -auto-approve -var="public_key_path=$HOME/.ssh/teamproj01ansiblekey.pub" -var="admin_cidr=0.0.0.0/0" -var="tailscale_auth_key=${{ secrets.TS_AUTH_KEY }}" -var="slack_webhook_url=${{ secrets.SLACK_WEBHOOK_URL }}"
-
+        # ⚠️ NO LINE CONTINUATION FLAGS OR ESCAPED CLI ARGUMENTS REQUIRED
+        run: terraform apply -auto-approve
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: ap-northeast-2
+          # ⬇️ TERRAFORM AUTOMATICALLY MAPS THESE DIRECTLY TO YOUR VARIABLES
+          TF_VAR_tailscale_auth_key: ${{ secrets.TS_AUTH_KEY }}
+          TF_VAR_public_key_path: "/home/runner/.ssh/teamproj01ansiblekey.pub"
+          TF_VAR_slack_webhook_url: ${{ secrets.SLACK_WEBHOOK_URL }}
       # ── Save outputs ─────────────────────────────────────────────────
       - name: Save Terraform outputs
         working-directory: ${{ env.TF_DIR }}
@@ -191,6 +199,7 @@ jobs:
           oauth-client-id: ${{ secrets.TS_OAUTH_CLIENT_ID }}
           oauth-secret: ${{ secrets.TS_OAUTH_SECRET }}
           tags: tag:project1-ec2
+          accept-routes: true
 
       # ── Wait for mgmt to be SSH-ready ────────────────────────────────
       - name: Wait for mgmt SSH
@@ -216,7 +225,7 @@ jobs:
         run: |
           echo "Waiting 60 seconds for mgmt background bootstrap script to install Tailscale..."
           sleep 60
-          
+
           # Helper: get Tailscale IP via public SSH (for mgmt)
           get_ts_ip_direct() {
             local IP=$1
