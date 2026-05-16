@@ -214,6 +214,13 @@ resource "aws_security_group" "mgmt" {
     protocol    = "tcp"
     cidr_blocks = [var.admin_cidr]
   }
+  ingress {
+  description = "Tailscale UDP"
+  from_port   = 41641
+  to_port     = 41641
+  protocol    = "udp"
+  cidr_blocks = ["0.0.0.0/0"]
+  }
   egress {
     from_port   = 0
     to_port     = 0
@@ -251,6 +258,13 @@ resource "aws_security_group" "app" {
     security_groups = [aws_security_group.mgmt.id]
   }
   ingress {
+  description = "SSH from Tailscale"
+  from_port   = 22
+  to_port     = 22
+  protocol    = "tcp"
+  cidr_blocks = ["100.64.0.0/10"]
+  }
+  ingress {
     description     = "Node Exporter from mgmt (Prometheus scrape)"
     from_port       = 9100
     to_port         = 9100
@@ -285,6 +299,13 @@ resource "aws_security_group" "db" {
     to_port         = 22
     protocol        = "tcp"
     security_groups = [aws_security_group.mgmt.id]
+  }
+  ingress {
+  description = "SSH from Tailscale"
+  from_port   = 22
+  to_port     = 22
+  protocol    = "tcp"
+  cidr_blocks = ["100.64.0.0/10"]
   }
   ingress {
     description     = "Node Exporter from mgmt"

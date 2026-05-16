@@ -45,17 +45,28 @@ variable "public_key_path" {
 }
 
 
-variable "rocky_ami_id" {
-  type        = string
-  description = "The AMI ID used to provision Rocky Linux instances"
-  default     = "ami-01d0a514d7901594e" 
+# Automatically finds the newest, valid official Rocky Linux 9 image
+data "aws_ami" "official_rocky9" {
+  most_recent = true
+  owners      = ["679593333241"] # Official Rocky Linux AWS account
+
+  filter {
+    name   = "name"
+    values = ["Rocky-9-EC2-Base-9.*.x86_64*"]
+  }
 }
 
-variable "ubuntu_ami_id" {
-  type        = string
-  description = "The AMI ID used to provision the Ubuntu PostgreSQL database instance"
-  default     = "ami-040c33ebdd1669460"
+# Automatically finds the newest, valid official Ubuntu 24.04 image
+data "aws_ami" "official_ubuntu24" {
+  most_recent = true
+  owners      = ["099720109477"] # Official Canonical (Ubuntu) AWS account
+
+  filter {
+    name   = "name"
+    values = ["ubuntu/images/hvm-ssd-gp3/ubuntu-noble-24.04-amd64-server-*"]
+  }
 }
+
 
 
 variable "mgmt_instance_type" {

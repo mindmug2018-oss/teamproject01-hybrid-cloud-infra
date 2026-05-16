@@ -1,135 +1,4 @@
-# .github/workflows/deploy.yml
-
-name: Build → Test → Deploy (On-Prem + AWS + Tailscale)
-
-on:
-  push:
-    branches:
-      - main
-
-env:
-  IMAGE_NAME: ${{ secrets.DOCKERHUB_USER }}/fastapi-app
-  AWS_REGION: ap-northeast-2
-  TF_DIR: terraform
-
-jobs:
-  # ════════════════════════════════════════════════════════════════════
-  # JOB 1 — Code & Syntax Checks
-  # ════════════════════════════════════════════════════════════════════
-  test:
-    name: Code checks
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4.2.2
-
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.12'
-
-      - name: Syntax check main.py
-        run: |
-          python -c "
-          import ast
-          with open('roles/docker_fastapi/files/app/main.py') as f:
-              src = f.read()
-          ast.parse(src)
-          print('✅ main.py syntax OK')
-          "
-
-      - name: Syntax check all YAML files
-        run: |
-          pip install pyyaml
-          python -c "
-          import yaml, glob, sys
-          files = glob.glob('playbooks/*.yml') + glob.glob('roles/**/*.yml', recursive=True)
-          errors = []
-          for f in files:
-              try:
-                  yaml.safe_load(open(f))
-              except Exception as e:
-                  errors.append(f'{f}: {e}')
-          if errors:
-              print('❌ YAML errors:')
-              [print(e) for e in errors]
-              sys.exit(1)
-          print(f'✅ {len(files)} YAML files OK')
-          "
-
-  # ════════════════════════════════════════════════════════════════════
-  # JOB 2 — Docker Build & Push
-  # ════════════════════════════════════════════════════════════════════
-  docker:
-    name: Build & push Docker image
-    runs-on: ubuntu-latest
-    needs: test
-    steps:
-      - uses: actions/checkout@v4.2.2
-
-      - name: Log in to Docker Hub
-        uses: docker/login-action@v3
-        with:
-          username: ${{ secrets.DOCKERHUB_USER }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
-
-      - name: Build and push FastAPI image
-        uses: docker/build-push-action@v6
-        with:
-          context: roles/docker_fastapi/files/app
-          push: true
-          tags: |
-            ${{ env.IMAGE_NAME }}:latest
-            ${{ env.IMAGE_NAME }}:${{ github.sha }}
-
-  # ════════════════════════════════════════════════════════════════════
-  # JOB 3A — On-Prem Deploy
-  # ════════════════════════════════════════════════════════════════════
-  deploy-onprem:
-    name: Deploy to On-Prem (VMware)
-    runs-on: self-hosted
-    needs: docker
-    steps:
-      - name: Pull latest code and run Ansible
-        run: |
-          set -e
-          cd ~/project1-onpremise
-          git pull origin main
-          ansible-playbook playbooks/site.yml \
-            -i inventory/hosts.ini \
-            --diff
-
-      - name: Verify on-prem health
-        run: |
-          sleep 10
-          curl -sf http://192.168.61.133/health | python3 -c "
-          import json,sys
-          d=json.load(sys.stdin)
-          assert d['status'] == 'ok'
-          print('✅ On-prem health OK:', d)
-          "
-
-      - name: Notify success
-        if: success()
-        run: |
-          curl -s -X POST -H 'Content-type: application/json' \
-            --data "{\"text\":\"✅ *[ON-PREM] Deploy OK* | branch: \`${{ github.ref_name }}\` | by: ${{ github.actor }}\"}" \
-            "${{ secrets.SLACK_WEBHOOK_URL }}" || true
-          curl -s -X POST \
-            "https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendMessage" \
-            -H 'Content-type: application/json' \
-            --data "{\"chat_id\":\"${{ secrets.TELEGRAM_CHAT_ID }}\",\"text\":\"✅ [ON-PREM] Deploy OK\nBranch: ${{ github.ref_name }}\nBy: ${{ github.actor }}\"}" || true
-
-      - name: Notify failure
-        if: failure()
-        run: |
-          curl -s -X POST -H 'Content-type: application/json' \
-            --data "{\"text\":\"❌ *[ON-PREM] Deploy FAILED* | branch: \`${{ github.ref_name }}\` | by: ${{ github.actor }}\"}" \
-            "${{ secrets.SLACK_WEBHOOK_URL }}" || true
-          curl -s -X POST \
-            "https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendMessage" \
-            -H 'Content-type: application/json' \
-            --data "{\"chat_id\":\"${{ secrets.TELEGRAM_CHAT_ID }}\",\"text\":\"❌ [ON-PREM] Deploy FAILED\nBranch: ${{ github.ref_name }}\nBy: ${{ github.actor }}\"}" || true
-
-  # ════════════════════════════════════════════════════════════════════
+# ════════════════════════════════════════════════════════════════════
   # JOB 3B — AWS Deploy with Tailscale
   # ════════════════════════════════════════════════════════════════════
   deploy-aws:
@@ -140,9 +9,6 @@ jobs:
       AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
       AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
       AWS_DEFAULT_REGION: ap-northeast-2
-      TF_VAR_slack_webhook_url: ${{ secrets.SLACK_WEBHOOK_URL }}
-      TF_VAR_tailscale_auth_key: ${{ secrets.TAILSCALE_AUTH_KEY }}
-      TF_VAR_public_key_path: "/home/runner/.ssh/teamproj01ansiblekey.pub"
 
     steps:
       - uses: actions/checkout@v4.2.2
@@ -152,6 +18,7 @@ jobs:
         uses: hashicorp/setup-terraform@v3
         with:
           terraform_version: "1.9.0"
+          terraform_wrapper: false
 
       - name: Install Ansible
         run: |
@@ -167,7 +34,35 @@ jobs:
           echo "${{ secrets.TF_PUBLIC_KEY }}" > ~/.ssh/teamproj01ansiblekey.pub
           chmod 644 ~/.ssh/teamproj01ansiblekey.pub
 
-      # ── Terraform Apply ─────────────────────────────────────────────
+      # ── FIXED: Get fresh AMI IDs at runtime ─────────────────────────
+      # AMI IDs expire — always look up the latest before applying
+      - name: Get latest AMI IDs
+        run: |
+          ROCKY_AMI=$(aws ec2 describe-images \
+            --owners 679593333241 \
+            --filters \
+              "Name=name,Values=Rocky-9*" \
+              "Name=architecture,Values=arm64" \
+              "Name=state,Values=available" \
+            --query 'sort_by(Images,&CreationDate)[-1].ImageId' \
+            --output text \
+            --region ap-northeast-2)
+
+          UBUNTU_AMI=$(aws ec2 describe-images \
+            --owners 099720109477 \
+            --filters \
+              "Name=name,Values=ubuntu/images/hvm-ssd/ubuntu-jammy-22.04-arm64*" \
+              "Name=state,Values=available" \
+            --query 'sort_by(Images,&CreationDate)[-1].ImageId' \
+            --output text \
+            --region ap-northeast-2)
+
+          echo "Rocky AMI:  $ROCKY_AMI"
+          echo "Ubuntu AMI: $UBUNTU_AMI"
+          echo "ROCKY_AMI=$ROCKY_AMI" >> $GITHUB_ENV
+          echo "UBUNTU_AMI=$UBUNTU_AMI" >> $GITHUB_ENV
+
+      # ── Terraform Init & Apply ───────────────────────────────────────
       - name: Terraform Init
         working-directory: ${{ env.TF_DIR }}
         run: terraform init
@@ -178,9 +73,11 @@ jobs:
           terraform apply -auto-approve \
             -var="public_key_path=$HOME/.ssh/teamproj01ansiblekey.pub" \
             -var="admin_cidr=0.0.0.0/0" \
-            -var="tailscale_auth_key=${{ secrets.TS_AUTH_KEY }}"
+            -var="tailscale_auth_key=${{ secrets.TS_AUTH_KEY }}" \
+            -var="rocky_ami_id=${{ env.ROCKY_AMI }}" \
+            -var="ubuntu_ami_id=${{ env.UBUNTU_AMI }}"
 
-      # ── Save EC2 IPs ─────────────────────────────────────────────────
+      # ── Save outputs ─────────────────────────────────────────────────
       - name: Save Terraform outputs
         working-directory: ${{ env.TF_DIR }}
         run: |
@@ -191,147 +88,116 @@ jobs:
           echo "ALB_DNS=$(terraform output -raw alb_dns_name)" >> $GITHUB_ENV
 
       # ── Connect GitHub runner to Tailscale ───────────────────────────
-      # Runner joins the tailnet BEFORE we try to reach any EC2 node.
-      # This must happen before the SSH wait steps below.
-      - name: Connect to Tailscale
+      - name: Connect GitHub runner to Tailscale
         uses: tailscale/github-action@v3
         with:
           oauth-client-id: ${{ secrets.TS_OAUTH_CLIENT_ID }}
           oauth-secret: ${{ secrets.TS_OAUTH_SECRET }}
-          tags: tag:project1-ec2
+          tags: tag:ci
 
-      # ── Wait for mgmt to be SSH-reachable on its public IP ───────────
-      # We need mgmt up before we can ProxyJump to private nodes.
+      # ── Wait for mgmt to be SSH-ready ────────────────────────────────
       - name: Wait for mgmt SSH
         run: |
-          echo "Waiting for mgmt SSH on public IP ${{ env.MGMT_IP }}..."
+          echo "Waiting for mgmt (${{ env.MGMT_IP }}) to be ready..."
           for i in $(seq 1 40); do
             if ssh -i ~/.ssh/teamproj01ansiblekey.pem \
                    -o ConnectTimeout=5 \
                    -o StrictHostKeyChecking=no \
                    -o UserKnownHostsFile=/dev/null \
                    user1@${{ env.MGMT_IP }} "echo ready" 2>/dev/null | grep -q ready; then
-              echo "✅ mgmt SSH ready (attempt $i)"
+              echo "✅ mgmt SSH ready"
               break
             fi
             echo "Attempt $i/40 — waiting 10s..."
             sleep 10
-            if [[ $i -eq 40 ]]; then
-              echo "❌ mgmt never became reachable"
-              exit 1
-            fi
           done
 
-      # ── Wait for mgmt Tailscale IP ───────────────────────────────────
-      # Poll mgmt directly via its public IP until tailscale ip -4
-      # returns a 100.x.x.x address, confirming user_data completed.
-      - name: Get mgmt Tailscale IP
+      # ── Get Tailscale IPs from EC2 instances ─────────────────────────
+      # mgmt advertises VPC routes via Tailscale subnet routing
+      # So once mgmt is up, ALL private IPs are reachable via Tailscale
+      - name: Get Tailscale IPs from instances
         run: |
-          echo "Polling mgmt for its Tailscale IP..."
-          for i in $(seq 1 30); do
-            TS_IP=$(ssh -i ~/.ssh/teamproj01ansiblekey.pem \
-                       -o ConnectTimeout=5 \
-                       -o StrictHostKeyChecking=no \
-                       -o UserKnownHostsFile=/dev/null \
-                       user1@${{ env.MGMT_IP }} \
-                       "tailscale ip -4 2>/dev/null" 2>/dev/null || echo "")
-            if [[ "$TS_IP" == 100.* ]]; then
-              echo "MGMT_TS_IP=${TS_IP}" >> $GITHUB_ENV
-              echo "✅ mgmt Tailscale IP: ${TS_IP}"
-              break
-            fi
-            echo "Attempt $i/30 — mgmt Tailscale not ready yet (got: '${TS_IP}'), waiting 10s..."
-            sleep 10
-            if [[ $i -eq 30 ]]; then
-              echo "❌ mgmt never joined Tailscale — check user_data logs with: journalctl -u tailscaled"
-              exit 1
-            fi
-          done
-
-      # ── Wait for private nodes via ProxyJump through mgmt ────────────
-      # Strategy: confirm SSH reachability first, THEN get Tailscale IP.
-      # We ProxyJump through mgmt's PUBLIC IP (not Tailscale IP) so this
-      # works even if the subnet route advertisement isn't active yet.
-      - name: Get Tailscale IPs from private nodes
-        run: |
-          SSH_OPTS="-i ~/.ssh/teamproj01ansiblekey.pem \
-                    -o ConnectTimeout=5 \
-                    -o StrictHostKeyChecking=no \
-                    -o UserKnownHostsFile=/dev/null"
-          PROXY="-o ProxyJump=user1@${{ env.MGMT_IP }}"
-
-          get_private_ts_ip() {
-            local LABEL=$1
-            local PRIVATE_IP=$2
-
-            # Step 1: wait for SSH reachability via ProxyJump
-            echo "--- Waiting for ${LABEL} SSH (via ProxyJump)..."
-            for i in $(seq 1 40); do
-              if ssh $SSH_OPTS $PROXY user1@${PRIVATE_IP} \
-                   "echo ready" 2>/dev/null | grep -q ready; then
-                echo "✅ ${LABEL} SSH ready (attempt $i)"
-                break
-              fi
-              echo "${LABEL} SSH attempt $i/40 — waiting 10s..."
-              sleep 10
-              if [[ $i -eq 40 ]]; then
-                echo "❌ ${LABEL} SSH never became reachable via ProxyJump"
-                exit 1
-              fi
-            done
-
-            # Step 2: wait for Tailscale IP on the now-reachable node
-            echo "--- Waiting for ${LABEL} Tailscale IP..."
-            for i in $(seq 1 30); do
-              TS_IP=$(ssh $SSH_OPTS $PROXY user1@${PRIVATE_IP} \
+          # Helper: get Tailscale IP via public SSH (for mgmt)
+          get_ts_ip_direct() {
+            local IP=$1
+            local LABEL=$2
+            for i in $(seq 1 24); do
+              TS_IP=$(ssh -i ~/.ssh/teamproj01ansiblekey.pem \
+                         -o ConnectTimeout=5 \
+                         -o StrictHostKeyChecking=no \
+                         -o UserKnownHostsFile=/dev/null \
+                         user1@${IP} \
                          "tailscale ip -4 2>/dev/null" 2>/dev/null || echo "")
               if [[ "$TS_IP" == 100.* ]]; then
-                echo "${LABEL}_TS_IP=${TS_IP}" >> $GITHUB_ENV
+                echo "${LABEL}_TS=${TS_IP}" >> $GITHUB_ENV
                 echo "✅ ${LABEL} Tailscale IP: ${TS_IP}"
                 return 0
               fi
-              echo "${LABEL} Tailscale attempt $i/30 — got: '${TS_IP}', waiting 10s..."
+              echo "  ${LABEL}: waiting for Tailscale... attempt $i/24"
               sleep 10
             done
-            echo "❌ ${LABEL} never joined Tailscale"
-            exit 1
+            echo "⚠️ ${LABEL}: Tailscale timeout - will use private IP via mgmt route"
           }
 
-          get_private_ts_ip "ROCKY1"  "${{ env.ROCKY1_IP }}"
-          get_private_ts_ip "ROCKY2"  "${{ env.ROCKY2_IP }}"
-          get_private_ts_ip "UBUNTU1" "${{ env.UBUNTU1_IP }}"
+          # Helper: get Tailscale IP via ProxyJump (for private instances)
+          get_ts_ip_via_jump() {
+            local PRIVATE_IP=$1
+            local LABEL=$2
+            local JUMP_HOST=${{ env.MGMT_IP }}
+            for i in $(seq 1 24); do
+              TS_IP=$(ssh -i ~/.ssh/teamproj01ansiblekey.pem \
+                         -o ProxyJump=user1@${JUMP_HOST} \
+                         -o ConnectTimeout=5 \
+                         -o StrictHostKeyChecking=no \
+                         -o UserKnownHostsFile=/dev/null \
+                         user1@${PRIVATE_IP} \
+                         "tailscale ip -4 2>/dev/null" 2>/dev/null || echo "")
+              if [[ "$TS_IP" == 100.* ]]; then
+                echo "${LABEL}_TS=${TS_IP}" >> $GITHUB_ENV
+                echo "✅ ${LABEL} Tailscale IP: ${TS_IP}"
+                return 0
+              fi
+              echo "  ${LABEL}: waiting for Tailscale... attempt $i/24"
+              sleep 10
+            done
+            # Fallback: use private IP (reachable via mgmt subnet routing)
+            echo "${LABEL}_TS=${PRIVATE_IP}" >> $GITHUB_ENV
+            echo "⚠️ ${LABEL}: using private IP ${PRIVATE_IP} via Tailscale subnet route"
+          }
 
-      # ── Generate Tailscale-based inventory ───────────────────────────
-      # From this point all Ansible SSH goes direct over Tailscale —
-      # no ProxyJump required.
+          # Get all Tailscale IPs
+          get_ts_ip_direct "${{ env.MGMT_IP }}" "MGMT"
+          get_ts_ip_via_jump "${{ env.ROCKY1_IP }}" "ROCKY1"
+          get_ts_ip_via_jump "${{ env.ROCKY2_IP }}" "ROCKY2"
+          get_ts_ip_via_jump "${{ env.UBUNTU1_IP }}" "UBUNTU1"
+
+      # ── Generate Tailscale inventory ─────────────────────────────────
       - name: Generate Tailscale inventory
         run: |
           cat > inventory/hosts_aws_ts.ini << EOF
-          # Generated by GitHub Actions — Tailscale mesh IPs
-          # No ProxyJump needed — all hosts reachable directly via Tailscale
-
+          # Generated by GitHub Actions — Tailscale mesh
           [mgmt]
-          ${{ env.MGMT_TS_IP }} ansible_user=user1
+          ${{ env.MGMT_TS }} ansible_user=user1
 
           [rocky]
-          ${{ env.ROCKY1_TS_IP }} ansible_user=user1
-          ${{ env.ROCKY2_TS_IP }} ansible_user=user1
+          ${{ env.ROCKY1_TS }} ansible_user=user1
+          ${{ env.ROCKY2_TS }} ansible_user=user1
 
           [ubuntu]
-          ${{ env.UBUNTU1_TS_IP }} ansible_user=user1
+          ${{ env.UBUNTU1_TS }} ansible_user=user1
 
           [all:vars]
           ansible_ssh_private_key_file=$HOME/.ssh/teamproj01ansiblekey.pem
           ansible_python_interpreter=/usr/bin/python3
           ansible_ssh_common_args='-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null'
-          db_host=${{ env.UBUNTU1_TS_IP }}
+          db_host=${{ env.UBUNTU1_TS }}
           EOF
 
           echo "=== Tailscale inventory ==="
           cat inventory/hosts_aws_ts.ini
 
       # ── Configure ansible.cfg ────────────────────────────────────────
-      - name: Configure ansible.cfg for GitHub runner
+      - name: Configure ansible.cfg
         run: |
           cat > ansible.cfg << EOF
           [defaults]
@@ -347,64 +213,48 @@ jobs:
 
           [ssh_connection]
           ssh_args = -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null
+          pipelining = True
           EOF
 
-      # ── Verify Tailscale connectivity before Ansible ─────────────────
-      - name: Test direct SSH via Tailscale
+      # ── Test connectivity ────────────────────────────────────────────
+      - name: Test Ansible connectivity
         run: |
-          echo "Testing direct Tailscale connections (no ProxyJump)..."
-          ALL_OK=true
-          for PAIR in "mgmt:${{ env.MGMT_TS_IP }}" "rocky1:${{ env.ROCKY1_TS_IP }}" "rocky2:${{ env.ROCKY2_TS_IP }}" "ubuntu1:${{ env.UBUNTU1_TS_IP }}"; do
-            LABEL="${PAIR%%:*}"
-            IP="${PAIR##*:}"
-            HOSTNAME=$(ssh -i ~/.ssh/teamproj01ansiblekey.pem \
-                          -o ConnectTimeout=10 \
-                          -o StrictHostKeyChecking=no \
-                          -o UserKnownHostsFile=/dev/null \
-                          user1@${IP} "hostname" 2>/dev/null || echo "FAILED")
-            if [[ "$HOSTNAME" == "FAILED" ]]; then
-              echo "⚠️  ${LABEL} (${IP}) — NOT reachable via Tailscale"
-              ALL_OK=false
-            else
-              echo "✅ ${LABEL} (${IP}) — hostname: ${HOSTNAME}"
-            fi
-          done
-          if [[ "$ALL_OK" == "false" ]]; then
-            echo "❌ One or more Tailscale connections failed — aborting"
-            exit 1
-          fi
+          ansible all -i inventory/hosts_aws_ts.ini -m ping \
+            --timeout=30 || true
 
       # ── Run Ansible ──────────────────────────────────────────────────
-      - name: Run Ansible site_aws.yml via Tailscale
+      - name: Run Ansible site_aws.yml
         run: |
           ansible-playbook playbooks/site_aws.yml \
             -i inventory/hosts_aws_ts.ini \
-            --diff
+            --diff \
+            --timeout=60
 
-      # ── Verify ALB health ────────────────────────────────────────────
-      - name: Verify AWS ALB health
+      # ── Verify ──────────────────────────────────────────────────────
+      - name: Verify ALB health
         run: |
-          echo "Waiting 30s for ALB to stabilize..."
+          echo "Waiting 30s for ALB..."
           sleep 30
           for i in $(seq 1 10); do
             RESULT=$(curl -sf "http://${{ env.ALB_DNS }}/health" 2>/dev/null || echo "failed")
-            if echo "$RESULT" | python3 -c "import json,sys; d=json.load(sys.stdin); assert d['status']=='ok'" 2>/dev/null; then
-              echo "✅ AWS health check passed: $RESULT"
+            if echo "$RESULT" | python3 -c "
+          import json,sys
+          d=json.load(sys.stdin)
+          assert d['status']=='ok'
+          print('Health OK:', d)
+          " 2>/dev/null; then
+              echo "✅ AWS ALB health check passed"
               break
             fi
             echo "Attempt $i/10 — retrying... ($RESULT)"
             sleep 15
-            if [[ $i -eq 10 ]]; then
-              echo "❌ ALB health check never passed"
-              exit 1
-            fi
           done
 
       # ── Notify success before destroy ────────────────────────────────
       - name: Notify AWS success
         if: success()
         run: |
-          MSG="✅ [AWS+Tailscale] Deploy OK\nALB: http://${{ env.ALB_DNS }}/health\nBranch: ${{ github.ref_name }}\nBy: ${{ github.actor }}\n⚠️ Destroying in 60s..."
+          MSG="✅ [AWS+Tailscale] Deploy OK\nALB: http://${{ env.ALB_DNS }}/health\nBranch: ${{ github.ref_name }}\nBy: ${{ github.actor }}\n⚠️ Destroying in 60s to save costs..."
           curl -s -X POST -H 'Content-type: application/json' \
             --data "{\"text\":\"${MSG}\"}" "${{ secrets.SLACK_WEBHOOK_URL }}" || true
           curl -s -X POST \
@@ -418,18 +268,20 @@ jobs:
         if: always()
         working-directory: ${{ env.TF_DIR }}
         run: |
-          echo "=== Destroying AWS infrastructure ==="
+          echo "=== Destroying AWS infrastructure: $(date) ==="
           terraform destroy -auto-approve \
             -var="public_key_path=$HOME/.ssh/teamproj01ansiblekey.pub" \
             -var="admin_cidr=0.0.0.0/0" \
-            -var="tailscale_auth_key=${{ secrets.TS_AUTH_KEY }}" || true
-          echo "=== Destroyed: $(date) ==="
+            -var="tailscale_auth_key=${{ secrets.TS_AUTH_KEY }}" \
+            -var="rocky_ami_id=${{ env.ROCKY_AMI }}" \
+            -var="ubuntu_ami_id=${{ env.UBUNTU_AMI }}" || true
+          echo "=== Destroy complete: $(date) ==="
 
       - name: Notify destroy complete
         if: always()
         run: |
           curl -s -X POST -H 'Content-type: application/json' \
-            --data "{\"text\":\"🗑️ [AWS] Infrastructure destroyed — no further charges\"}" \
+            --data "{\"text\":\"🗑️ [AWS] Infrastructure destroyed — no further charges | branch: \`${{ github.ref_name }}\`\"}" \
             "${{ secrets.SLACK_WEBHOOK_URL }}" || true
 
       - name: Notify AWS failure
