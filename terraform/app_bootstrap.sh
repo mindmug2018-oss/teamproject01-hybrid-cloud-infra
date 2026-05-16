@@ -45,7 +45,6 @@ done
 tailscale up \
   --authkey="${TS_AUTH_KEY}" \
   --advertise-tags="tag:project1-ec2" \
-  --ephemeral \
   --accept-routes \
   --accept-dns=false \
   --hostname="${VM_HOSTNAME}"
