@@ -165,34 +165,6 @@ jobs:
           echo "${{ secrets.TF_PUBLIC_KEY }}" > ~/.ssh/teamproj01ansiblekey.pub
           chmod 644 ~/.ssh/teamproj01ansiblekey.pub
 
-      # ── FIXED: Get fresh AMI IDs at runtime ─────────────────────────
-      # AMI IDs expire — always look up the latest before applying
-      - name: Get latest AMI IDs
-        run: |
-          ROCKY_AMI=$(aws ec2 describe-images \
-            --owners 679593333241 \
-            --filters \
-              "Name=name,Values=Rocky-9*" \
-              "Name=architecture,Values=arm64" \
-              "Name=state,Values=available" \
-            --query 'sort_by(Images,&CreationDate)[-1].ImageId' \
-            --output text \
-            --region ap-northeast-2)
-
-          UBUNTU_AMI=$(aws ec2 describe-images \
-            --owners 099720109477 \
-            --filters \
-              "Name=name,Values=ubuntu/images/hvm-ssd/ubuntu-jammy-22.04-arm64*" \
-              "Name=state,Values=available" \
-            --query 'sort_by(Images,&CreationDate)[-1].ImageId' \
-            --output text \
-            --region ap-northeast-2)
-
-          echo "Rocky AMI:  $ROCKY_AMI"
-          echo "Ubuntu AMI: $UBUNTU_AMI"
-          echo "ROCKY_AMI=$ROCKY_AMI" >> $GITHUB_ENV
-          echo "UBUNTU_AMI=$UBUNTU_AMI" >> $GITHUB_ENV
-
       # ── Terraform Init & Apply ───────────────────────────────────────
       - name: Terraform Init
         working-directory: ${{ env.TF_DIR }}

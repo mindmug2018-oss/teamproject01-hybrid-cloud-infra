@@ -28,6 +28,35 @@ provider "aws" {
   region = var.aws_region
 }
 
+data "aws_ami" "official_rocky9" {
+  most_recent = true
+  owners      = ["679593333241"] # Official Rocky Linux AWS Account
+
+  filter {
+    name   = "name"
+    values = ["Rocky-9-EC2-Base-9.*.x86_64*"]
+  }
+
+  filter {
+    name   = "architecture"
+    values = ["x86_64"]
+  }
+}
+
+data "aws_ami" "official_ubuntu24" {
+  most_recent = true
+  owners      = ["099720109477"] # Canonical (Ubuntu) AWS Account
+
+  filter {
+    name   = "name"
+    values = ["ubuntu/images/hvm-ssd-gp3/ubuntu-noble-24.04-amd64-server-*"]
+  }
+
+  filter {
+    name   = "architecture"
+    values = ["amd64"]
+  }
+}
 
 ########################################################################
 # DATA SOURCES
