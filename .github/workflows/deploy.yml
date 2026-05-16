@@ -327,6 +327,7 @@ jobs:
           ansible_python_interpreter=/usr/bin/python3
           ansible_ssh_common_args='-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null'
           db_host=${{ env.UBUNTU1_TS }}
+          slack_webhook_url=${{ secrets.SLACK_WEBHOOK_URL }}
           EOF
 
           echo "=== Tailscale inventory ==="
